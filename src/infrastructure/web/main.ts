@@ -8,6 +8,7 @@ import {IndexedDBEngine, setEngine, setNamespace} from "soukai-bis";
 import {bootSoukaiModels} from "../soukai/bootModels.ts";
 import {CDI} from "../cdi/CDI.ts";
 import {ConnectivityMonitor} from "../solid/ConnectivityMonitor.ts";
+import './components/sync-progress-dialog.ts';
 
 
 // ife for bootstrapping
@@ -31,6 +32,10 @@ void (async () => {
     } catch (e) {
         console.error('Could not initialize application.', e);
     }
+
+    // The sync progress dialog sits beside the router outlet, so it survives
+    // route changes and shows on every page (incl. the post-login sync below).
+    document.body.appendChild(document.createElement('sync-progress-dialog'));
 
     // Restore any existing Solid session (login is NOT required to use the app).
     await CDI.getInstance().getSolidService().restoreSession();

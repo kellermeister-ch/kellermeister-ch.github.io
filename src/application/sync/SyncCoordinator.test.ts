@@ -4,6 +4,7 @@ import {SynchronizeWithPod} from "./SynchronizeWithPod.ts";
 import {NotAuthenticatedError} from "../errors.ts";
 import type {AuthService, SolidSession} from "../ports/AuthService.ts";
 import {fakeAppState} from "./appStateStore.fake.ts";
+import {initialSyncProgress, type SyncProgress, type SyncProgressListener} from "../ports/SyncService.ts";
 
 const session: SolidSession = {isLoggedIn: true, webId: "https://alice.pod/profile#me", fetch};
 const loggedIn: AuthService = {isLoggedIn: () => true, getSession: () => session};
@@ -14,14 +15,17 @@ const flush = () => new Promise((resolve) => setTimeout(resolve, 0));
 /** A SynchronizeWithPod whose runs complete only when we release them. */
 function controllable() {
     const resolvers: Array<() => void> = [];
+    // The progress callback handed to each run, to report progress through.
+    const progressListeners: Array<SyncProgressListener | undefined> = [];
     let calls = 0;
     const synchronize = {
-        execute: () => {
+        execute: (onProgress?: SyncProgressListener) => {
             calls++;
+            progressListeners.push(onProgress);
             return new Promise<{reconciled: number}>((resolve) => resolvers.push(() => resolve({reconciled: 0})));
         },
     } as unknown as SynchronizeWithPod;
-    return {synchronize, resolvers, calls: () => calls};
+    return {synchronize, resolvers, progressListeners, calls: () => calls};
 }
 
 describe("SyncCoordinator", () => {
@@ -106,5 +110,52 @@ describe("SyncCoordinator", () => {
 
         expect(coordinator.getStatus().state).toBe("error");
         expect(app.getLastSyncedAt()?.getTime()).toBe(seeded.getTime());
+    });
+
+    it("reports progress to listeners while syncing and clears it when the run succeeds", async () => {
+        const {synchronize, resolvers, progressListeners} = controllable();
+        const coordinator = new SyncCoordinator(loggedIn, synchronize);
+        const seen: Array<SyncProgress | null> = [];
+        coordinator.onStatusChange((s) => seen.push(s.progress));
+
+        void coordinator.requestSync("manual");
+        await flush();
+        expect(coordinator.getStatus().progress).toEqual(initialSyncProgress());
+
+        const midway: SyncProgress = {...initialSyncProgress(), step: "pull", overall: 0.4};
+        progressListeners[0]?.(midway);
+        expect(coordinator.getStatus().state).toBe("syncing");
+        expect(coordinator.getStatus().progress).toEqual(midway);
+        expect(seen).toContainEqual(midway);
+
+        resolvers[0]();
+        await flush();
+        expect(coordinator.getStatus().progress).toBeNull();
+    });
+
+    it("clears progress when the run fails", async () => {
+        const failing = {execute: () => Promise.reject(new Error("network down"))} as unknown as SynchronizeWithPod;
+        const coordinator = new SyncCoordinator(loggedIn, failing);
+        await coordinator.requestSync("manual");
+        expect(coordinator.getStatus().state).toBe("error");
+        expect(coordinator.getStatus().progress).toBeNull();
+    });
+
+    it("starts a coalesced follow-up run from the initial progress", async () => {
+        const {synchronize, resolvers, progressListeners} = controllable();
+        const coordinator = new SyncCoordinator(loggedIn, synchronize);
+
+        void coordinator.requestSync("manual");
+        await flush();
+        progressListeners[0]?.({...initialSyncProgress(), step: "push", overall: 0.95});
+        void coordinator.requestSync("manual"); // coalesced
+
+        resolvers[0]();
+        await flush();
+        expect(coordinator.getStatus().state).toBe("syncing");
+        expect(coordinator.getStatus().progress).toEqual(initialSyncProgress());
+
+        resolvers[1]();
+        await flush();
     });
 });

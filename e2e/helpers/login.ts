@@ -54,6 +54,9 @@ export async function login(page: Page, webId: string = TEST_WEBID): Promise<voi
   // can take a while for a large Pod, so wait generously.
   await page.waitForURL((url) => !url.href.includes(podHost), { timeout: 30_000 });
   await expect(page.getByRole('button', { name: 'Hütte' })).toBeVisible({ timeout: 150_000 });
+  // The sync progress dialog closes by itself shortly after the sync; wait for
+  // it so it doesn't cover what the test clicks next.
+  await expect(page.locator('sync-progress-dialog .overlay')).toHaveCount(0, { timeout: 10_000 });
 }
 
 /**

@@ -1,5 +1,5 @@
 import type {AuthService} from "../ports/AuthService.ts";
-import type {SyncService, SyncOutcome} from "../ports/SyncService.ts";
+import type {SyncService, SyncOutcome, SyncProgressListener} from "../ports/SyncService.ts";
 import type {ReadModelCache} from "../ports/ReadModelCache.ts";
 import {NotAuthenticatedError} from "../errors.ts";
 
@@ -18,11 +18,11 @@ export class SynchronizeWithPod {
     ) {
     }
 
-    async execute(): Promise<SyncOutcome> {
+    async execute(onProgress?: SyncProgressListener): Promise<SyncOutcome> {
         if (!this.auth.isLoggedIn()) {
             throw new NotAuthenticatedError();
         }
-        const outcome = await this.sync.synchronize();
+        const outcome = await this.sync.synchronize(onProgress);
         this.cache?.invalidate();
         return outcome;
     }

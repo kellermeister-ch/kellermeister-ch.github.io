@@ -17,7 +17,7 @@ class SyncStatusComponent extends LitElement {
     private unsubscribe: (() => void) | null = null;
 
     @state()
-    private status: SyncStatus = {state: "idle", lastSyncedAt: null, error: null};
+    private status: SyncStatus = {state: "idle", lastSyncedAt: null, error: null, progress: null};
 
     @state()
     private hint: string | null = null;

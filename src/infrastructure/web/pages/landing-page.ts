@@ -54,7 +54,7 @@ class LandingPage extends BasePage {
     private switchToConfirm: {webId: string; previousWebId: string} | null = null;
 
     @state()
-    private status: SyncStatus = {state: "idle", lastSyncedAt: null, error: null};
+    private status: SyncStatus = {state: "idle", lastSyncedAt: null, error: null, progress: null};
 
     private _webIdResolve: ((profile: WebIDProfile | null) => void) | null = null;
     private _switchResolve: ((confirmed: boolean) => void) | null = null;

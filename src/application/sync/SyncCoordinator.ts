@@ -2,6 +2,7 @@ import type {AuthService} from "../ports/AuthService.ts";
 import type {AppStateStore} from "../ports/AppStateStore.ts";
 import {NotAuthenticatedError} from "../errors.ts";
 import type {SynchronizeWithPod} from "./SynchronizeWithPod.ts";
+import {initialSyncProgress, type SyncProgress} from "../ports/SyncService.ts";
 
 export type SyncState = "idle" | "syncing" | "error";
 
@@ -9,6 +10,8 @@ export interface SyncStatus {
     state: SyncState;
     lastSyncedAt: Date | null;
     error: string | null;
+    /** Progress of the running sync; `null` whenever no sync is running. */
+    progress: SyncProgress | null;
 }
 
 export type SyncTrigger = "manual" | "reconnect";
@@ -24,7 +27,7 @@ type StatusListener = (status: SyncStatus) => void;
  *    the manual path surfaces a NotAuthenticatedError so the UI can prompt login.
  */
 export class SyncCoordinator {
-    private status: SyncStatus = {state: "idle", lastSyncedAt: null, error: null};
+    private status: SyncStatus = {state: "idle", lastSyncedAt: null, error: null, progress: null};
     private running = false;
     private pending = false;
     private readonly listeners = new Set<StatusListener>();
@@ -79,15 +82,21 @@ export class SyncCoordinator {
         console.log("run: started...");
         const syncStart = Date.now();
         this.running = true;
-        this.setStatus({state: "syncing", error: null});
+        this.setStatus({state: "syncing", error: null, progress: initialSyncProgress()});
+        console.log("run: step", initialSyncProgress().step);
         try {
-            await this.synchronize.execute();
+            await this.synchronize.execute((progress) => {
+                if (progress.step !== this.status.progress?.step) {
+                    console.log("run: step", progress.step);
+                }
+                this.setStatus({progress});
+            });
             const lastSyncedAt = new Date();
             console.log("run: finished in (seconds)", (Date.now() - syncStart)/1000);
-            this.setStatus({state: "idle", lastSyncedAt, error: null});
+            this.setStatus({state: "idle", lastSyncedAt, error: null, progress: null});
             await this.appState?.setLastSyncedAt(lastSyncedAt);
         } catch (error) {
-            this.setStatus({state: "error", error: toMessage(error)});
+            this.setStatus({state: "error", error: toMessage(error), progress: null});
         } finally {
             this.running = false;
             if (this.pending) {

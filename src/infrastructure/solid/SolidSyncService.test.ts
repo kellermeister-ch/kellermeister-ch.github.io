@@ -7,7 +7,8 @@ import {describe, it, expect, beforeEach} from "vitest";
 import type {InMemoryEngine} from "soukai-bis";
 
 import {installMemoryEngine} from "../../testing/soukai.ts";
-import {SolidSyncService} from "./SolidSyncService.ts";
+import {APPLICATION_MODELS, SolidSyncService} from "./SolidSyncService.ts";
+import {SYNC_COLLECTIONS} from "../../application/ports/SyncService.ts";
 import type {AuthService} from "../../application/ports/AuthService.ts";
 import {SoukaiCellar} from "../soukai/model/SoukaiCellar.ts";
 import {SoukaiProduct} from "../soukai/model/SoukaiProduct.ts";
@@ -74,5 +75,20 @@ describe("SolidSyncService.rehome", () => {
 
         expect(fixed).toBe(0);
         expect(await SoukaiCellar.all({from: `${POD}cellars/`})).toHaveLength(1);
+    });
+});
+
+describe("SolidSyncService container order", () => {
+
+    // The sync progress rows map soukai-bis's per-container status by position,
+    // so the type index must register the containers in SYNC_COLLECTIONS order.
+    it("registers the synced collections in SYNC_COLLECTIONS order", () => {
+        expect(APPLICATION_MODELS.map(({collection}) => collection)).toEqual(SYNC_COLLECTIONS);
+    });
+
+    it("builds the type index with its containers in that order", () => {
+        const typeIndex = service["buildTypeIndex"](POD);
+        expect((typeIndex.registrations ?? []).map((registration) => registration.instanceContainer))
+            .toEqual(SYNC_COLLECTIONS.map((collection) => `${POD}${collection}/`));
     });
 });
