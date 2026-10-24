@@ -2,7 +2,8 @@ import { test, expect, type Page } from '@playwright/test';
 import { login } from '../helpers/login';
 
 /**
- * The cellar header shows the cellar's total bottle count under its name.
+ * The cellar header shows the cellar's total bottle count under its name, and
+ * "matching von total" while a wine-type or search filter is active.
  *
  * Serial with one shared, logged-in page: the Solid OIDC login is slow, and the
  * later cases build on each other (a bottle is moved into the "Brixen" cellar,
@@ -19,14 +20,18 @@ async function sumOfRowBadges(page: Page): Promise<number> {
   return texts.reduce((n, t) => n + Number(t.trim()), 0);
 }
 
-/** The leading number of the header subline, e.g. "765 Flaschen" -> 765. */
+/** The cellar total in the header subline: "765 Flaschen" -> 765, "14 von 765 Flaschen" -> 765. */
 async function subtitleCount(page: Page): Promise<number> {
-  const text = (await subtitle(page).textContent()) ?? '';
-  return Number(text.trim().split(/\s+/)[0]);
+  const words = ((await subtitle(page).textContent()) ?? '').trim().split(/\s+/);
+  return Number(words[words.length - 2]);
 }
 
 /** The header subline for a count: "1 Flasche", otherwise "N Flaschen". */
 const countLabel = (n: number): string => `${n} ${n === 1 ? 'Flasche' : 'Flaschen'}`;
+
+/** The header subline while a filter is active: "14 von 765 Flaschen"; the noun follows the total. */
+const filteredLabel = (matching: number, total: number): string =>
+  `${matching} von ${countLabel(total)}`;
 
 async function openCellar(page: Page, name: string): Promise<void> {
   await page.goto('/');
@@ -83,23 +88,63 @@ test.describe('Cellar header bottle count', () => {
     expect(huetteTotal).not.toBe(luzernTotal);
   });
 
-  test('count is unaffected by wine-type filters and search', async () => {
+  test('an active filter shows matching von total, clearing it shows the total', async () => {
     await openCellar(page, 'Luzern');
     const all = await sumOfRowBadges(page);
 
     for (const filter of ['Sprudel', 'Rot', 'Weiss', 'Rosé']) {
       await page.getByRole('button', { name: filter, exact: true }).click();
       await expect.poll(() => sumOfRowBadges(page)).toBeLessThan(all);
-      expect(await subtitleCount(page)).toBe(luzernTotal);
+      await expect(subtitle(page)).toHaveText(filteredLabel(await sumOfRowBadges(page), luzernTotal));
       await page.getByRole('button', { name: filter, exact: true }).click();
       await expect.poll(() => sumOfRowBadges(page)).toBe(all);
+      await expect(subtitle(page)).toHaveText(countLabel(luzernTotal));
     }
+
+    // Combined filters: the matching count is whatever passes both.
+    await page.getByRole('button', { name: 'Sprudel', exact: true }).click();
+    await page.getByRole('button', { name: 'Rosé', exact: true }).click();
+    await expect.poll(() => sumOfRowBadges(page)).toBeLessThan(all);
+    await expect(subtitle(page)).toHaveText(filteredLabel(await sumOfRowBadges(page), luzernTotal));
+    await page.getByRole('button', { name: 'Sprudel', exact: true }).click();
+    await page.getByRole('button', { name: 'Rosé', exact: true }).click();
+    await expect(subtitle(page)).toHaveText(countLabel(luzernTotal));
 
     await page.getByRole('button', { name: 'Search', exact: true }).click();
     await page.locator('.search-input').fill('Pinot');
     await expect.poll(() => sumOfRowBadges(page)).toBeLessThan(all);
-    expect(await subtitleCount(page)).toBe(luzernTotal);
+    await expect(subtitle(page)).toHaveText(filteredLabel(await sumOfRowBadges(page), luzernTotal));
+
+    // A search with no matches shows "0 von total".
+    await page.locator('.search-input').fill('zzz-no-such-wine');
+    await expect(page.locator('.no-bottles')).toBeVisible();
+    await expect(subtitle(page)).toHaveText(filteredLabel(0, luzernTotal));
+
+    await page.locator('.search-input').fill('');
+    await expect.poll(() => sumOfRowBadges(page)).toBe(all);
+    await expect(subtitle(page)).toHaveText(countLabel(luzernTotal));
     await page.keyboard.press('Escape');
+  });
+
+  // fixme: a few seconds after a full page load the app can leave the cellar
+  // view for "/" on its own (likely the restorePreviousSession redirect in
+  // InruptSolidService.restoreSession), and this test runs long enough to hit it.
+  test.fixme('a filter restored from the URL shows matching von total on open', async () => {
+    // Activate Rot (written to the URL as ?rot=1), leave for Kellerarbeit and
+    // come back: the cellar view is re-entered with the filter only in its URL.
+    await openCellar(page, 'Luzern');
+    await page.getByRole('button', { name: 'Rot', exact: true }).click();
+    await page.waitForURL(/\?rot=1$/);
+    await page.getByRole('button', { name: 'Kellerarbeit', exact: true }).click();
+    await page.waitForURL(/\/cellarwork\//);
+    // A client-side history step fires no "load" event.
+    await page.goBack({ waitUntil: 'commit' });
+    await page.waitForURL(/\/cellar\/.*\?rot=1$/);
+
+    // "matching von total" appears once the filtered rows have loaded.
+    await expect(subtitle(page)).toHaveText(/^\d+ von \d+ Flaschen?$/, { timeout: 30_000 });
+    expect(await subtitleCount(page)).toBe(luzernTotal);
+    await expect(subtitle(page)).toHaveText(filteredLabel(await sumOfRowBadges(page), luzernTotal));
   });
 
   test('a cellar\'s count matches its rows and uses the right noun', async () => {
@@ -151,6 +196,7 @@ test.describe('Cellar header bottle count', () => {
     const headerHeight = async () => (await page.locator('kellermeister-header').boundingBox())?.height;
 
     await page.goto('/');
+    await expect(page.locator('kellermeister-header')).toBeVisible();
     await expect(subtitle(page)).toHaveCount(0);
     const baseline = await headerHeight();
 
@@ -168,5 +214,20 @@ test.describe('Cellar header bottle count', () => {
     await page.waitForURL(/\/cellarwork\//);
     await expect(subtitle(page)).toHaveCount(0);
     expect(await headerHeight()).toBe(baseline);
+  });
+
+  test('disposing a listed bottle under a filter decrements both numbers', async () => {
+    await openCellar(page, 'Luzern');
+    const total = await subtitleCount(page);
+    await page.getByRole('button', { name: 'Rot', exact: true }).click();
+    await expect.poll(() => sumOfRowBadges(page)).toBeGreaterThan(0);
+    const matching = await sumOfRowBadges(page);
+    await expect(subtitle(page)).toHaveText(filteredLabel(matching, total));
+
+    await page.locator('li .bottle-button').first().click();
+    await page.locator('.rating-button').first().click();
+    await page.locator('.rating-action.confirm').click();
+
+    await expect(subtitle(page)).toHaveText(filteredLabel(matching - 1, total - 1), { timeout: 30_000 });
   });
 });

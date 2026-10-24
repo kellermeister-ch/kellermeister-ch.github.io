@@ -18,6 +18,7 @@ import type {Bottle} from "../../../domain/Bottle/Bottle.ts";
 import type {Cellar} from "../../../domain/Cellar/Cellar.ts";
 import {CELLAR_UPDATED_EVENT} from "../events.ts";
 import plusIcon from "../images/icons/plus.svg?raw";
+import {formatBottleCount} from "../components/bottle-count-format.ts";
 
 @customElement('cellar-page')
 class CellarPage extends BasePage {
@@ -72,7 +73,7 @@ class CellarPage extends BasePage {
         return new Map<string, Bottle[]>();
     });
 
-    // The header shows the cellar's total, so this deliberately ignores this.filter.
+    // The cellar's total (the header's denominator), so this deliberately ignores this.filter.
     private _bottleCountTask = new Task(this, async () => {
         return await this.cdi.getKellermeisterService().bottleCountInCellar(this.cellar);
     });
@@ -139,7 +140,7 @@ class CellarPage extends BasePage {
         return html`
           <kellermeister-header>Keller ${this.cellar?.getName()}
               ${this._bottleCountTask.render({
-                  complete: (count) => html`<span slot="subtitle">${count} ${count === 1 ? 'Flasche' : 'Flaschen'}</span>`,
+                  complete: (count) => html`<span slot="subtitle">${formatBottleCount(count, this.matchingBottleCount())}</span>`,
               })}
               <kellermeister-button slot="actions" text="Search" @click="${this.handleTextFilterClick}" .ghost=${this.filter.isText} icon="search" size="small"></kellermeister-button>
               <kellermeister-button slot="actions" text="Kellerarbeit" @click="${this.handleCellarworkClick}" icon="work" size="small"></kellermeister-button>
@@ -241,6 +242,19 @@ class CellarPage extends BasePage {
               <kellermeister-footer></kellermeister-footer>
           </footer>
     `;
+    }
+
+    /**
+     * While a filter is active, the number of bottles in the listed rows
+     * (summed from the filtered groups, so it always matches the row badges);
+     * undefined without a filter, so the header shows only the total.
+     */
+    private matchingBottleCount(): number | undefined {
+        const bottles = this._bottlesTask.value;
+        if (!this.filter.hasRestrictions() || !bottles) {
+            return undefined;
+        }
+        return [...bottles.values()].reduce((n, bottleGroup) => n + bottleGroup.length, 0);
     }
 
     private loadBottles() {
