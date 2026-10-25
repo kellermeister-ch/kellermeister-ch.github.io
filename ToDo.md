@@ -7,7 +7,6 @@ ToDo
 - [ ] S&E: Preis lookup review
 - [ ] E: API Key für REST API
 - [ ] E: in Einkäufe soll auch ein Löschen sein
-- [ ] E: wenn eine neue Version der App vorliegt, soll die App fragen ob diese installiert werden soll
 
 ### Prio 2
 
@@ -40,6 +39,7 @@ ToDo
 Done
 ---
 
+- [x] E: wenn eine neue Version der App vorliegt, soll die App fragen, ob diese installiert werden soll
 - [x] E: Fortschritt Anzeige bei Solid Sync
 - [x] E: Anzeige "14 von 764 Flaschen" in Keller Seite mit Filter
 - [x] E: in Quelle soll der Name des Sellars oder die PriceSource des OrderItems angezeigt werden

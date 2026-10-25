@@ -9,6 +9,12 @@ import {bootSoukaiModels} from "../soukai/bootModels.ts";
 import {CDI} from "../cdi/CDI.ts";
 import {ConnectivityMonitor} from "../solid/ConnectivityMonitor.ts";
 import './components/sync-progress-dialog.ts';
+import type {UpdateBanner} from './components/update-banner.ts';
+import './components/update-banner.ts';
+import {registerSW} from 'virtual:pwa-register';
+
+// How often an open app asks the server for a new service worker (a new version).
+const UPDATE_CHECK_INTERVAL_MS = 60 * 60 * 1000;
 
 
 // ife for bootstrapping
@@ -16,6 +22,35 @@ void (async () => {
 
     // Output build version
     console.info(`Kellermeister Version: ${getBuildVersion()}`);
+
+    // App update: a new version waits until the user accepts it in the banner
+    // (registerType 'prompt'); updateSW(true) activates it and reloads every
+    // open tab. The browser looks for a new service worker only on a full
+    // navigation, which a single-page app rarely does, so also check hourly and
+    // whenever the app comes back to the foreground.
+    const updateBanner = document.body.appendChild(document.createElement('update-banner')) as UpdateBanner;
+    const updateSW = registerSW({
+        immediate: true,
+        onNeedRefresh() {
+            updateBanner.show(() => void updateSW(true));
+        },
+        onRegisteredSW(_swUrl, registration) {
+            if (!registration) {
+                return;
+            }
+            const checkForUpdate = () => {
+                if (navigator.onLine) {
+                    void registration.update();
+                }
+            };
+            setInterval(checkForUpdate, UPDATE_CHECK_INTERVAL_MS);
+            document.addEventListener('visibilitychange', () => {
+                if (document.visibilityState === 'visible') {
+                    checkForUpdate();
+                }
+            });
+        },
+    });
 
     // Local-first: the global engine is IndexedDB, so all ordinary reads/writes
     // are local and offline-capable. The Pod is reached only by the sync layer

@@ -9,8 +9,13 @@ export default defineConfig({
     outDir: './docs'
   },
   plugins: [
+    // https://vite-pwa-org.netlify.app/guide/
     VitePWA({
-      registerType: 'autoUpdate',
+      // A new version waits until the user accepts it in the update banner;
+      // registered from main.ts via virtual:pwa-register instead of the
+      // injected registerSW.js script, which can neither prompt nor reload.
+      registerType: 'prompt',
+      injectRegister: false,
       includeAssets: ['favicon.ico'],
       manifest: {
         name: 'Kellermeister',
