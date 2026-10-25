@@ -108,8 +108,8 @@ test.describe('sync request volume', () => {
         const third = await measureOneSync(page, 'sync #3 (no-op, convergence)');
 
         // A no-op sync must not re-fetch any domain document. Before the
-        // well-known-cellar baseline fix this was 2 (cellarwork + altglass were
-        // re-pulled on every sync forever); it must now be 0.
+        // baseline alignment this was 2 (cellarwork + altglass were re-pulled on
+        // every sync forever); it must now be 0.
         expect(second.documentGETs, `unexpected document GETs: ${second.documentGETs.join(', ')}`).toHaveLength(0);
         expect(third.documentGETs, `unexpected document GETs: ${third.documentGETs.join(', ')}`).toHaveLength(0);
 
@@ -117,9 +117,57 @@ test.describe('sync request volume', () => {
         expect(second.writes).toHaveLength(0);
         expect(third.writes).toHaveLength(0);
 
-        // Container reads only: one listing per collection (the once-per-session
-        // reconciliation container read has already happened during the login
-        // sync, so steady-state syncs add none).
-        expect(third.containerGETs.length).toBeLessThanOrEqual(COLLECTIONS.length + 1);
+        // Container reads only: one listing per collection. The baseline
+        // alignment reads a listing only when the sync changed a baseline, so a
+        // no-op sync adds none.
+        expect(third.containerGETs.length).toBeLessThanOrEqual(COLLECTIONS.length);
+    });
+
+    test('a local store whose baselines went stale heals in one sync (no per-document GETs afterwards)', async ({authedPage}) => {
+        test.setTimeout(600_000);
+        const page = authedPage;
+
+        // Put the local store into the state seen on an iPhone: every synced
+        // document's baseline is an estimate (~sync time) instead of the Pod's
+        // dc:modified, as soukai-bis writes after a merge that pushes nothing.
+        // Without the alignment, every sync then re-fetches every document.
+        const staled = await page.evaluate(() => new Promise<number>((resolve, reject) => {
+            const open = indexedDB.open('kellermeister');
+            open.onerror = () => reject(open.error);
+            open.onsuccess = () => {
+                const db = open.result;
+                const transaction = db.transaction('documents', 'readwrite');
+                const now = new Date();
+                let count = 0;
+                const cursorRequest = transaction.objectStore('documents').openCursor();
+                cursorRequest.onsuccess = () => {
+                    const cursor = cursorRequest.result;
+                    if (!cursor) return;
+                    const url = String(cursor.primaryKey);
+                    if (!url.endsWith('/') && cursor.value.lastModifiedAt instanceof Date) {
+                        cursor.update({...cursor.value, lastModifiedAt: now});
+                        count++;
+                    }
+                    cursor.continue();
+                };
+                transaction.oncomplete = () => {
+                    db.close();
+                    resolve(count);
+                };
+                transaction.onerror = () => reject(transaction.error);
+            };
+        }));
+        expect(staled, 'no synced documents to make stale').toBeGreaterThan(0);
+
+        // The healing sync still fetches the documents (that is how the stale
+        // state shows) and leaves correct baselines behind. Merging every
+        // document may also push a local-only change it now notices, so its
+        // writes are not asserted.
+        const healing = await measureOneSync(page, 'sync #2 (stale baselines)');
+        expect(healing.documentGETs.length).toBeGreaterThan(0);
+
+        const healed = await measureOneSync(page, 'sync #3 (healed)');
+        expect(healed.documentGETs, `unexpected document GETs: ${healed.documentGETs.join(', ')}`).toHaveLength(0);
+        expect(healed.writes).toHaveLength(0);
     });
 });
