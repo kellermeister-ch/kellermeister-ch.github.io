@@ -517,6 +517,10 @@ export class KellermeisterService implements ReadModelCache {
             }
             grouped.get(dateKey)?.push(order);
         }
+        // newest order first within each month; sort is stable for same-date orders
+        for (const monthOrders of grouped.values()) {
+            monthOrders.sort((a, b) => (b.getOrderDate()?.getTime() ?? 0) - (a.getOrderDate()?.getTime() ?? 0));
+        }
         return new Map([...grouped.entries()].sort(([a], [b]) => b.getTime() - a.getTime()));
     }
 

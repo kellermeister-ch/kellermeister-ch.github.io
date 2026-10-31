@@ -538,6 +538,28 @@ describe('KellermeisterService', () => {
             expect(keys[2].getMonth()).toBe(11); // December
         });
 
+        it('sorts orders within a month in descending order (newest first)', async () => {
+            const oct3 = makeOrder(new Date(2026, 9, 3));
+            const oct28 = makeOrder(new Date(2026, 9, 28));
+            const oct15 = makeOrder(new Date(2026, 9, 15));
+            vi.mocked(orderRepo.fetchOrders).mockResolvedValue([oct3, oct28, oct15]);
+
+            const [orders] = [...(await service.ordersGroupedByMonth(new ProductFilter())).values()];
+            expect(orders).toEqual([oct28, oct15, oct3]);
+        });
+
+        it('keeps the relative order of orders with the same date', async () => {
+            const first = makeOrder(new Date(2026, 9, 10));
+            const second = makeOrder(new Date(2026, 9, 10));
+            const newer = makeOrder(new Date(2026, 9, 20));
+            vi.mocked(orderRepo.fetchOrders).mockResolvedValue([first, second, newer]);
+
+            const [orders] = [...(await service.ordersGroupedByMonth(new ProductFilter())).values()];
+            expect(orders[0]).toBe(newer);
+            expect(orders[1]).toBe(first);
+            expect(orders[2]).toBe(second);
+        });
+
         it('groups orders with no date under a single unknown-date key (1900-01-01)', async () => {
             const o1 = makeOrder(undefined);
             const o2 = makeOrder(undefined);

@@ -9,7 +9,6 @@ ToDo
 - [ ] E: in Einkäufe soll auch ein Löschen sein
 - [ ] E: Backup Konzept
 - [ ] E: bei Wechsel des Pods soll gefragt werden, ob die lokalen Daten gelöscht oder in den neuen Pod übernommen werden sollen
-- [ ] E: In Einkäufe (order-page) sollen die Flaschen innerhalb eines Monats absteigend nach Datum sortiert sein, so dass die neusten Einkäufe zuerst angezeigt werden
 
 ### Prio 2
 
@@ -22,7 +21,7 @@ ToDo
   - Weinbewertungen Top (3), (2), (1) 
 - [ ] Client ID Metadata Document als JSON-LD (https://github.com/mfhepp/test_mime_types)
 - [ ] Refresh Button
-- [ ] E: Filter nach muss ausgetrunken werden --> lange (1sec) auf filter toggle drücken
+- [ ] E: Filter nach muss ausgetrunken werden → lange (1sec) auf filter toggle drücken
 
 ### Prio 3
 
@@ -42,6 +41,7 @@ ToDo
 Done
 ---
 
+- [x] E: In Einkäufe sollen die Flaschen innerhalb eines Monats absteigend nach Datum sortiert sein, so dass die neusten Einkäufe zuerst angezeigt werden
 - [x] E:Versionsnummer: 1.0.97-20261026-a879d43 anstatt 1.0.0-20261016-97-a879d43
 - [x] E: wenn eine neue Version der App vorliegt, soll die App fragen, ob diese installiert werden soll
 - [x] E: Fortschritt Anzeige bei Solid Sync
