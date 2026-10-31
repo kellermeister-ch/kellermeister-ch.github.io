@@ -1,7 +1,7 @@
 Kellermeister
 ===
 
-Kellermeister ist eine Web Applikation für die Verwaltung eines oder mehrerer Weinkeller.
+Kellermeister ist eine Web Applikation (PWA) für die Verwaltung eines oder mehrerer Weinkeller.
 
 Design
 ---
