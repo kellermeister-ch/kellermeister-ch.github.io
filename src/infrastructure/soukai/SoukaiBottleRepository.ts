@@ -30,9 +30,16 @@ export class SoukaiBottleRepository implements BottleRepository {
         // Resolve each bottle's (same-document) rating so it is available for the
         // product's aggregated rating display. Same-document relations are not
         // auto-populated on read — they must be loaded explicitly.
+        // A rating still embedded as a node (the previous storage form) is copied
+        // into the bottle's rating properties once and saved, so the next sync
+        // brings it to the Pod — the sync drops embedded nodes of documents that
+        // already exist there.
         await withLocalEngine(async () => {
             for (const bottle of bottles) {
                 await bottle.loadRelation("rating");
+                if (bottle.adoptEmbeddedRating()) {
+                    await bottle.save();
+                }
             }
         });
 

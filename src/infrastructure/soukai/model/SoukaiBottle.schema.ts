@@ -23,9 +23,16 @@ export default defineSchema({
         cellarUrl: string().optional().rdfProperty("schema:cellar"),
         orderItemId: url().optional().rdfProperty("schema:orderItemId"),
 
-        // Foreign key for the same-document `rating` relation (a schema:Rating
-        // node embedded in the bottle document). See the `rating` relation below
-        // and Bottle.setRating()/getRating().
+        // The bottle's rating, stored as properties of the bottle resource itself
+        // so that setting it is a regular (operation-logged) change of the bottle
+        // that the Pod sync transfers. See Bottle.setRating()/getRating().
+        ratingValue: number().optional().rdfProperty("km:ratingValue"),
+        ratedAt: date().optional().rdfProperty("km:ratedAt"),
+
+        // Legacy: foreign key for the same-document `rating` relation (a
+        // schema:Rating node embedded in the bottle document). No longer written:
+        // the sync drops such nodes once the bottle is on the Pod. Kept so old
+        // documents stay readable — see the `rating` relation below.
         ratingUrl: url().optional().rdfProperty("km:rating"),
 
         // Legacy: rating used to be a bare number on the ListItem, then moved to
@@ -40,8 +47,8 @@ export default defineSchema({
 
     relations: {
         product: belongsToOne(() => requireBootedModel("SoukaiProduct"), "productUrl"),
-        // A single rating stored on the bottle, embedded in the bottle document
-        // so writing a rating rewrites only this (small) resource, not the product.
+        // Legacy: a single rating embedded in the bottle document (read-only,
+        // superseded by `ratingValue`/`ratedAt`).
         rating: belongsToOne(() => requireBootedModel("SoukaiRating"), "ratingUrl").usingSameDocument(),
     },
 });

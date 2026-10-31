@@ -31,7 +31,18 @@ export class SoukaiBottle extends Model implements Bottle {
         return this.product;
     }
     getRating(): Rating | undefined {
-        // Prefer the structured, dated rating stored on this bottle.
+        // Prefer the rating stored as properties of this bottle.
+        const value = this.orUndefined(this.ratingValue);
+        if (value !== undefined) {
+            const date = this.ratedAt ?? undefined;
+            return {
+                getId: () => this.getId(),
+                getValue: () => value,
+                getDate: () => date as unknown as Date,
+            };
+        }
+        // Backward-compat: a rating embedded as a node in the bottle document
+        // (written before ratings became bottle properties).
         if (this.rating) {
             return this.rating;
         }
@@ -48,12 +59,27 @@ export class SoukaiBottle extends Model implements Bottle {
         return undefined;
     }
     setRating(value: number): void {
-        const rating: SoukaiRating = new SoukaiRating();
-        rating.value = value;
-        rating.date = new Date();
-        // Attach through the relation so the rating is embedded in the bottle
-        // document on save (a plain assignment does not register it with bis).
-        this.relatedRating.setRelated(rating);
+        // Plain properties of the bottle resource, so the change is recorded in
+        // the bottle's operation log and synced. An embedded rating node is not:
+        // the Pod sync drops it once the bottle document exists on the Pod.
+        this.ratingValue = value;
+        this.ratedAt = new Date();
+    }
+
+    /**
+     * Copy a rating embedded as a node (the previous storage form) into the
+     * bottle's rating properties, so the next sync brings it to the Pod.
+     * Requires the `rating` relation to be loaded.
+     *
+     * @returns whether the bottle changed and needs to be saved.
+     */
+    adoptEmbeddedRating(): boolean {
+        if (this.ratingValue !== undefined || !this.rating?.value) {
+            return false;
+        }
+        this.ratingValue = this.rating.value;
+        this.ratedAt = this.rating.date ?? undefined;
+        return true;
     }
 
     getDisposedAt(): Date | undefined {
@@ -63,9 +89,9 @@ export class SoukaiBottle extends Model implements Bottle {
         this.disposedAt = date;
     }
     getEffectiveDisposalDate(): Date | undefined {
-        // Legacy bottles have no stored date: the structured rating is dated at
-        // disposal time; the legacy numeric rating is dateless and skipped.
-        return this.getDisposedAt() ?? this.rating?.date ?? this.updatedAt ?? undefined;
+        // Legacy bottles have no stored date: the rating is dated at disposal
+        // time; the legacy numeric rating is dateless and skipped.
+        return this.getDisposedAt() ?? this.ratedAt ?? this.rating?.date ?? this.updatedAt ?? undefined;
     }
 
     private orUndefined(value: any): any | undefined {

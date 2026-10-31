@@ -8,7 +8,7 @@ ToDo
 - [ ] E: API Key für REST API
 - [ ] E: in Einkäufe soll auch ein Löschen sein
 - [ ] E: Backup Konzept
-- [ ] E: bei Wechsel des Pods soll gefragt werden, ob die lokalen Daten gelöscht oder in den neuen Pod übernommen werden sollen
+- [ ] E: bei Wechsel des Pods soll gefragt werden, ob die lokalen Daten oder die Daten aus dem neuen Pod verwendet werden sollen
 
 ### Prio 2
 
@@ -41,6 +41,7 @@ ToDo
 Done
 ---
 
+- [x] E: Bewertung wird nicht in den Pod synchronisiert
 - [x] E: In Einkäufe sollen die Flaschen innerhalb eines Monats absteigend nach Datum sortiert sein, so dass die neusten Einkäufe zuerst angezeigt werden
 - [x] E:Versionsnummer: 1.0.97-20261026-a879d43 anstatt 1.0.0-20261016-97-a879d43
 - [x] E: wenn eine neue Version der App vorliegt, soll die App fragen, ob diese installiert werden soll
