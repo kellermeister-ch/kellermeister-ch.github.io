@@ -44,7 +44,7 @@ jobs:
           echo "GITHUB_SHA_SHORT=$(git rev-parse --short ${{ github.sha }})" >> $GITHUB_ENV
 
       - name: Save build version
-        run: echo "BUILD_VERSION=${{ env.PACKAGE_VERSION }}-${{ env.BUILD_DATE }}-${{ github.run_number }}-${{ env.GITHUB_SHA_SHORT }}" >> $GITHUB_ENV
+        run: echo "BUILD_VERSION=${{ env.PACKAGE_VERSION }}.${{ github.run_number }}-${{ env.BUILD_DATE }}-${{ env.GITHUB_SHA_SHORT }}" >> $GITHUB_ENV
 
       - name: Setup build time variables
         run: |
