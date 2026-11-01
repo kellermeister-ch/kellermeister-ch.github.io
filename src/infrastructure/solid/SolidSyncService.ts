@@ -1,10 +1,11 @@
-import {Container, getEngine, MigrateLocalUrls, SolidEngine, Sync, TypeIndex, TypeRegistration, type Engine, type ManagesContainers, type ManagesDocuments} from "soukai-bis";
-import {fetchLoginUserProfile, type SolidUserProfile} from "@noeldemartin/solid-utils";
+import {Container, getEngine, MigrateLocalUrls, SolidEngine, Sync, TypeIndex, TypeRegistration, type Engine, type ManagesContainers, type ManagesDocuments, type PurgesMetadata} from "soukai-bis";
+import {fetchLoginUserProfile, turtleToQuadsSync, type SolidUserProfile} from "@noeldemartin/solid-utils";
+import type {Literal, Term} from "@rdfjs/types";
 import type {AuthService, SolidSession} from "../../application/ports/AuthService.ts";
 import {initialSyncProgress, type SyncService, type SyncOutcome, type SyncProgress, type SyncProgressListener} from "../../application/ports/SyncService.ts";
 import {toSyncProgress} from "./syncProgressFromJob.ts";
 import {alignChangedBaselines} from "./syncBaselines.ts";
-import {LOCAL_BASE} from "../shared/resource-identity.ts";
+import {LOCAL_BASE, WELL_KNOWN_CELLAR, wellKnownCellarUrl} from "../shared/resource-identity.ts";
 import {withLocalEngine} from "../soukai/engineScope.ts";
 import {POD_CONTAINER_PATH} from "./podContainerPath.ts";
 import {SoukaiCellar} from "../soukai/model/SoukaiCellar.ts";
@@ -13,10 +14,11 @@ import {SoukaiBottle} from "../soukai/model/SoukaiBottle.ts";
 import {SoukaiOrder} from "../soukai/model/SoukaiOrder.ts";
 
 /**
- * The local engine must manage containers (for MigrateLocalUrls / Sync) and
- * expose its documents' last-modified baselines (for {@link alignChangedBaselines}).
+ * The local engine must manage containers (for MigrateLocalUrls / Sync), expose
+ * its documents' last-modified baselines (for {@link alignChangedBaselines}) and
+ * be able to drop them (for {@link SolidSyncService.replacePod}).
  */
-type LocalEngine = Engine & ManagesContainers & ManagesDocuments;
+type LocalEngine = Engine & ManagesContainers & ManagesDocuments & PurgesMetadata;
 
 /**
  * The four aggregate roots, each under its Pod subcontainer
@@ -65,6 +67,48 @@ export class SolidSyncService implements SyncService {
             (session) => fetchLoginUserProfile(session.webId as string, {fetch: session.fetch}),
         private readonly localEngine: () => LocalEngine = () => getEngine() as LocalEngine,
     ) {
+    }
+
+    async replacePod(fromBase: string | null): Promise<void> {
+        const session = this.auth.getSession();
+        if (!session.isLoggedIn || !session.webId) {
+            throw new Error("Cannot replace the Pod's data without an authenticated session.");
+        }
+        const base = this.podBase();
+        if (!base) {
+            throw new Error("Cannot replace the Pod's data before the Pod container is resolved.");
+        }
+        const localEngine = this.localEngine();
+        const remoteEngine = this.remoteEngine(session);
+
+        // 1. Move the local data from the previous Pod's URLs to this Pod's. Never
+        // -synced (`local://`) documents are left to the regular re-home.
+        if (fromBase && fromBase !== base) {
+            console.log("replacePod: moving the local data from", fromBase, "to", base);
+            await new MigrateUrlsAndLiterals({engine: localEngine, migrations: {[fromBase]: base}}).start();
+            // The migration empties the previous Pod's containers but keeps them.
+            await localEngine.dropContainers(new RegExp(`^${fromBase.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}`));
+        }
+
+        // 2. Erase this Pod's Kellermeister collections — only their member
+        // documents: the containers, the inbox and the rest of the Pod stay.
+        for (const {collection} of APPLICATION_MODELS) {
+            const members = await this.readContainerMembers(remoteEngine, `${base}${collection}/`);
+            for (const documentUrl of members) {
+                await remoteEngine.deleteDocument(documentUrl);
+            }
+            console.log("replacePod: erased on the Pod:", collection, members.length);
+        }
+
+        // 3. A local document with a last-modified baseline is taken to exist on
+        // the Pod; after the erase none does, so drop the baselines and the next
+        // sync creates every document afresh.
+        const baselines = await localEngine.getDocumentsLastModifiedAt();
+        const synced = Object.keys(baselines).filter((url) =>
+            baselines[url] && APPLICATION_MODELS.some(({collection}) => url.startsWith(`${base}${collection}/`)));
+        if (synced.length > 0) {
+            await localEngine.purgeMetadata({documentUrls: synced});
+        }
     }
 
     async synchronize(onProgress?: SyncProgressListener): Promise<SyncOutcome> {
@@ -138,6 +182,18 @@ export class SolidSyncService implements SyncService {
      * (the same value `Sync` compares baselines against). Any other container is
      * not ours to align and costs no request.
      */
+    /** The member documents of one of our Pod containers (none if it is absent). */
+    private async readContainerMembers(remoteEngine: SolidEngine, containerUrl: string): Promise<string[]> {
+        const remoteContainer = await remoteEngine.readDocumentIfExists(containerUrl);
+        if (!remoteContainer) {
+            return [];
+        }
+        const container = await Container.createFromDocument(remoteContainer, {url: containerUrl});
+        // `ldp:contains` — read from the attribute: the `resources` relation is
+        // only populated when the listing also describes each member.
+        return (container?.resourceUrls ?? []).filter((url) => !url.endsWith("/"));
+    }
+
     private async readContainerModified(remoteEngine: SolidEngine, base: string, containerUrl: string): Promise<Map<string, Date>> {
         const modified = new Map<string, Date>();
         if (!APPLICATION_MODELS.some(({collection}) => containerUrl === `${base}${collection}/`)) {
@@ -184,8 +240,28 @@ export class SolidSyncService implements SyncService {
      * compatibility) — so those are fixed up separately. Idempotent.
      */
     async rehome(localEngine: LocalEngine, base: string): Promise<number> {
+        await this.dropDuplicateWellKnownCellars(localEngine, base);
         await MigrateLocalUrls.run({engine: localEngine, migrations: {[LOCAL_BASE]: base}});
         return await withLocalEngine(() => this.fixCellarReferences(base));
+    }
+
+    /**
+     * The well-known cellars are bootstrapped as provisional documents whenever
+     * the app starts without a resolved Pod base. If the local store already
+     * holds their Pod copies — local data kept across a WebID switch — the
+     * provisional ones are duplicates of the same cellars and would block the
+     * migration onto those URLs, so they are dropped. References to them are
+     * still rewritten to the Pod copies by {@link fixCellarReferences}.
+     */
+    private async dropDuplicateWellKnownCellars(localEngine: LocalEngine, base: string): Promise<void> {
+        const stored = new Set(Object.keys(await localEngine.getDocumentsLastModifiedAt()));
+        for (const slug of Object.keys(WELL_KNOWN_CELLAR) as (keyof typeof WELL_KNOWN_CELLAR)[]) {
+            const provisional = wellKnownCellarUrl(slug).split("#")[0];
+            const onPod = `${base}${provisional.substring(LOCAL_BASE.length)}`;
+            if (stored.has(provisional) && stored.has(onPod)) {
+                await localEngine.deleteDocument(provisional);
+            }
+        }
     }
 
     /**
@@ -204,4 +280,28 @@ export class SolidSyncService implements SyncService {
         }
         return fixed;
     }
+}
+
+/**
+ * {@link MigrateLocalUrls} rewrites only IRIs. This also rewrites string
+ * literals holding a migrated URL — bottles' `cellarUrl` and its values in the
+ * operation history — so every document is migrated at the RDF level. Re-saving
+ * bottles as models instead would fail for documents written by older app
+ * versions, which carry no CRDT metadata.
+ */
+class MigrateUrlsAndLiterals extends MigrateLocalUrls {
+    protected migrateTerm<T extends Term>(term: T): T | null {
+        if (term.termType !== "Literal") {
+            return super.migrateTerm(term);
+        }
+        const migrated = this.migrateUrl(term.value);
+        return migrated ? withLiteralValue(term as Literal, migrated) as T : null;
+    }
+}
+
+/** A copy of `literal` with another value. solid-utils exposes no term factory, so it is parsed. */
+function withLiteralValue(literal: Literal, value: string): Literal {
+    const suffix = literal.language ? `@${literal.language}` : `^^<${literal.datatype.value}>`;
+    const [quad] = turtleToQuadsSync(`<urn:s> <urn:p> ${JSON.stringify(value)}${suffix} .`);
+    return quad.object as Literal;
 }

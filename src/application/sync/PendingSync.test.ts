@@ -4,7 +4,8 @@ import {ReconnectSync} from "./ReconnectSync.ts";
 import {fakeAppState} from "./appStateStore.fake.ts";
 import type {AuthService, SolidSession} from "../ports/AuthService.ts";
 
-const session: SolidSession = {isLoggedIn: true, webId: "https://alice.pod/profile#me", fetch};
+const ALICE = "https://alice.pod/profile#me";
+const session: SolidSession = {isLoggedIn: true, webId: ALICE, fetch};
 const loggedIn: AuthService = {isLoggedIn: () => true, getSession: () => session};
 const loggedOut: AuthService = {isLoggedIn: () => false, getSession: () => ({isLoggedIn: false, webId: null, fetch})};
 
@@ -30,7 +31,7 @@ describe("PendingSync", () => {
     });
 
     it("syncs once after the login redirect returns, then forgets the request", async () => {
-        const app = fakeAppState();
+        const app = fakeAppState({webId: ALICE});
         const {reconnect, runs} = countingReconnect();
         const pending = new PendingSync(loggedIn, app.store, reconnect, podResolved);
 
@@ -56,7 +57,7 @@ describe("PendingSync", () => {
     });
 
     it("keeps the request until the Pod container is resolved", async () => {
-        const app = fakeAppState({syncPending: true});
+        const app = fakeAppState({webId: ALICE, syncPending: true});
         const {reconnect, runs} = countingReconnect();
 
         // Startup: logged in, but the container base is not known yet.
@@ -70,8 +71,22 @@ describe("PendingSync", () => {
         expect(app.isSyncPending()).toBe(false);
     });
 
+    it("keeps the request until the session's WebID is adopted (a switch is still being settled)", async () => {
+        const app = fakeAppState({webId: "https://bob.pod/profile#me", syncPending: true});
+        const {reconnect, runs} = countingReconnect();
+        const pending = new PendingSync(loggedIn, app.store, reconnect, podResolved);
+
+        await pending.run();
+        expect(runs()).toBe(0);
+        expect(app.isSyncPending()).toBe(true);
+
+        await app.store.setWebId(ALICE); // the switch records the new identity
+        await pending.run();
+        expect(runs()).toBe(1);
+    });
+
     it("forgets the request even when the sync itself fails", async () => {
-        const app = fakeAppState({syncPending: true});
+        const app = fakeAppState({webId: ALICE, syncPending: true});
         const failing = {run: async () => { throw new Error("boom"); }} as unknown as ReconnectSync;
 
         await expect(new PendingSync(loggedIn, app.store, failing, podResolved).run()).rejects.toThrow("boom");

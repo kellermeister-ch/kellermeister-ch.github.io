@@ -53,4 +53,17 @@ export function initialSyncProgress(): SyncProgress {
  */
 export interface SyncService {
     synchronize(onProgress?: SyncProgressListener): Promise<SyncOutcome>;
+
+    /**
+     * Prepare the current session's Pod to receive the local data in place of
+     * its own (a WebID switch that kept the local data): move the local data
+     * from the Pod base it was synced with (`fromBase`, null if never synced) to
+     * the current Pod's base, erase the Kellermeister collections on the current
+     * Pod, and mark all local documents as never synced, so the next
+     * `synchronize` uploads them all and pulls nothing of the Pod's old data.
+     *
+     * Uploads nothing itself. MUST be idempotent: re-running it after an
+     * interruption leaves the same result.
+     */
+    replacePod(fromBase: string | null): Promise<void>;
 }

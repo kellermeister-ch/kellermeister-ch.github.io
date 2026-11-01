@@ -96,6 +96,7 @@ export class SyncCoordinator {
             this.setStatus({state: "idle", lastSyncedAt, error: null, progress: null});
             await this.appState?.setLastSyncedAt(lastSyncedAt);
         } catch (error) {
+            console.warn("run: failed", error);
             this.setStatus({state: "error", error: toMessage(error), progress: null});
         } finally {
             this.running = false;

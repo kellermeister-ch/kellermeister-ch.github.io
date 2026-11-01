@@ -35,8 +35,9 @@ export class PendingSync {
     }
 
     /**
-     * Run a remembered sync, if there is one. Without a session — or before the
-     * Pod container is resolved — the flag is kept: the request could not be
+     * Run a remembered sync, if there is one. Without a session — before the
+     * Pod container is resolved, or before the session's WebID is adopted as
+     * this device's identity — the flag is kept: the request could not be
      * served yet, so the user is still owed the sync. Otherwise the flag is
      * cleared BEFORE syncing, so a sync that keeps failing (`ReconnectSync`
      * already retries with backoff) cannot turn into a request that is replayed
@@ -44,6 +45,12 @@ export class PendingSync {
      */
     async run(): Promise<void> {
         if (!await this.appState.isSyncPending() || !this.auth.isLoggedIn() || !this.podResolved()) {
+            return;
+        }
+        // A session that is not adopted as this device's identity yet (a WebID
+        // switch is still being settled) cannot sync either; keep the request
+        // for the run after the switch.
+        if (await this.appState.getWebId() !== this.auth.getSession().webId) {
             return;
         }
         await this.appState.setSyncPending(false);

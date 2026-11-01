@@ -79,8 +79,8 @@ describe("WebID switch", () => {
         expect(await bottles.fetchBottles()).toHaveLength(1);
 
         // --- Bob logs in on the same device ---
-        expect(await identity.check(BOB)).toEqual({kind: "wipe-required", previousWebId: ALICE});
-        expect(await identity.switchTo(BOB)).toBe(true);
+        expect(await identity.check(BOB)).toEqual({kind: "choice-required", previousWebId: ALICE});
+        expect(await identity.switchTo(BOB, "keep-pod")).toBe(true);
 
         // --- Nothing of Alice's is readable, and the store still works ---
         const bobCellars = new SoukaiCellarRepository(() => null);
@@ -99,6 +99,26 @@ describe("WebID switch", () => {
         expect(await appState.getLastSyncedAt()).toBeNull();
         expect(registry.get()).toBeNull();
         expect(localStorage.getItem(WEBID_HISTORY_KEY)).toBe(JSON.stringify([ALICE]));
+    });
+
+    it("hands the local data to the new identity when keeping it", async () => {
+        await identity.switchTo(ALICE);
+        registry.set("https://alice.pod/private/kellermeister/v1/");
+        await appState.setLastSyncedAt(new Date("2026-10-01T00:00:00Z"));
+        const cellars = new SoukaiCellarRepository(() => null);
+        await cellars.createCellar("Alices Keller");
+
+        expect(await identity.switchTo(BOB, "keep-local")).toBe(true);
+
+        // The data stays, detached from Alice's Pod, and Bob owns it.
+        expect((await new SoukaiCellarRepository(() => null).fetchCellars()).map((c) => c.getName())).toContain("Alices Keller");
+        expect(registry.get()).toBeNull();
+        expect(new PodContainerRegistry().get()).toBeNull(); // also forgotten in localStorage
+        expect(await appState.getWebId()).toBe(BOB);
+        expect(await appState.getLastSyncedAt()).toBeNull();
+        expect(await appState.isSyncPending()).toBe(true);
+        expect(await appState.getPendingPodReplacement())
+            .toEqual({webId: BOB, fromBase: "https://alice.pod/private/kellermeister/v1/"});
     });
 
     it("keeps data created before the first login", async () => {

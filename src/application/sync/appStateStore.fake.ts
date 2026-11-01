@@ -1,10 +1,11 @@
-import type {AppStateStore} from "../ports/AppStateStore.ts";
+import type {AppStateStore, IdentitySwitchDecision, PendingPodReplacement} from "../ports/AppStateStore.ts";
 
 export interface AppStateStoreSeed {
     webId?: string | null;
     lastSyncedAt?: Date | null;
     syncPending?: boolean;
-    confirmedIdentitySwitch?: string | null;
+    identitySwitchChoice?: IdentitySwitchDecision | null;
+    pendingPodReplacement?: PendingPodReplacement | null;
 }
 
 /**
@@ -15,7 +16,8 @@ export function fakeAppState(seed?: AppStateStoreSeed) {
     let webId: string | null = seed?.webId ?? null;
     let lastSyncedAt: Date | null = seed?.lastSyncedAt ?? null;
     let syncPending: boolean = seed?.syncPending ?? false;
-    let confirmedIdentitySwitch: string | null = seed?.confirmedIdentitySwitch ?? null;
+    let identitySwitchChoice: IdentitySwitchDecision | null = seed?.identitySwitchChoice ?? null;
+    let pendingPodReplacement: PendingPodReplacement | null = seed?.pendingPodReplacement ?? null;
     const store: AppStateStore = {
         getWebId: async () => webId,
         setWebId: async (v) => { webId = v; },
@@ -23,14 +25,17 @@ export function fakeAppState(seed?: AppStateStoreSeed) {
         setLastSyncedAt: async (d) => { lastSyncedAt = d; },
         isSyncPending: async () => syncPending,
         setSyncPending: async (pending) => { syncPending = pending; },
-        getConfirmedIdentitySwitch: async () => confirmedIdentitySwitch,
-        setConfirmedIdentitySwitch: async (webId) => { confirmedIdentitySwitch = webId; },
+        getIdentitySwitchChoice: async () => identitySwitchChoice,
+        setIdentitySwitchChoice: async (decision) => { identitySwitchChoice = decision; },
+        getPendingPodReplacement: async () => pendingPodReplacement,
+        setPendingPodReplacement: async (pending) => { pendingPodReplacement = pending; },
     };
     return {
         store,
         getWebId: () => webId,
         getLastSyncedAt: () => lastSyncedAt,
         isSyncPending: () => syncPending,
-        getConfirmedIdentitySwitch: () => confirmedIdentitySwitch,
+        getIdentitySwitchChoice: () => identitySwitchChoice,
+        getPendingPodReplacement: () => pendingPodReplacement,
     };
 }

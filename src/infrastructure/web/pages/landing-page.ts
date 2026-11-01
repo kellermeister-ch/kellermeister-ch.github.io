@@ -16,6 +16,7 @@ import type {Cellar} from "../../../domain/Cellar/Cellar.ts";
 import {shouldRememberSync, syncFailureAction} from "../sync-ui-action.ts";
 import type {SyncStatus} from "../../../application/sync/SyncCoordinator.ts";
 import {formatLastSync} from "../components/sync-status-format.ts";
+import type {IdentitySwitchChoice} from "../../../application/ports/AppStateStore.ts";
 
 @customElement('landing-page')
 class LandingPage extends BasePage {
@@ -49,15 +50,18 @@ class LandingPage extends BasePage {
     @state()
     private showImageLightbox: boolean = false;
 
-    /** The WebID awaiting a wipe confirmation, with the identity it replaces. */
+    /**
+     * The WebID awaiting the choice of which data to keep, with the identity it
+     * replaces and the amount of local data (null while still counting).
+     */
     @state()
-    private switchToConfirm: {webId: string; previousWebId: string} | null = null;
+    private switchToChoose: {webId: string; previousWebId: string; cellars: number | null; bottles: number | null} | null = null;
 
     @state()
     private status: SyncStatus = {state: "idle", lastSyncedAt: null, error: null, progress: null};
 
     private _webIdResolve: ((profile: WebIDProfile | null) => void) | null = null;
-    private _switchResolve: ((confirmed: boolean) => void) | null = null;
+    private _switchResolve: ((choice: IdentitySwitchChoice | null) => void) | null = null;
 
     private cdi: CDI = CDI.getInstance();
     private unsubscribe: (() => void) | null = null;
@@ -185,22 +189,32 @@ class LandingPage extends BasePage {
                     <img class="lightbox-img" src="/Prozess_Foto.png" />
                 </div>
             ` : ''}
-            ${this.switchToConfirm ? html`
+            ${this.switchToChoose ? html`
                 <div class="dialog-overlay" @click="${this.handleSwitchCancel}">
                     <div class="dialog" role="dialog" aria-modal="true" aria-label="Andere WebID" @click="${(e: Event) => e.stopPropagation()}">
                         <h2>Andere WebID</h2>
                         <p>
-                            Auf diesem Gerät wurde zuletzt <strong>${this.switchToConfirm.previousWebId}</strong> verwendet.
-                            Beim Anmelden mit einer anderen WebID werden alle lokal gespeicherten Daten
-                            (Keller, Flaschen, Weine, Einkäufe) auf diesem Gerät gelöscht.
+                            Auf diesem Gerät wurde zuletzt <strong>${this.switchToChoose.previousWebId}</strong> verwendet.
+                            Lokal gespeichert sind ${this.localDataSummary()}.
                         </p>
-                        <p>
-                            Daten, die noch nicht mit dem Pod von ${this.switchToConfirm.previousWebId} synchronisiert
-                            wurden, sind danach unwiederbringlich verloren. Brich ab, wenn du zuerst synchronisieren willst.
-                        </p>
+                        <p>Welche Daten sollen für <strong>${this.switchToChoose.webId}</strong> gelten?</p>
+                        <div class="dialog-choice">
+                            <button class="dialog-btn dialog-btn-choice" @click="${() => this.handleSwitchChoice("keep-pod")}">Daten aus dem Pod übernehmen</button>
+                            <p class="dialog-choice-hint">
+                                Die lokalen Daten auf diesem Gerät werden gelöscht. Was noch nicht mit dem Pod von
+                                ${this.switchToChoose.previousWebId} synchronisiert wurde, ist danach unwiederbringlich verloren.
+                            </p>
+                        </div>
+                        <div class="dialog-choice">
+                            <button class="dialog-btn dialog-btn-choice" @click="${() => this.handleSwitchChoice("keep-local")}">Lokale Daten behalten</button>
+                            <p class="dialog-choice-hint">
+                                Die Kellermeister-Daten (Keller, Flaschen, Weine, Einkäufe) im Pod von ${this.switchToChoose.webId}
+                                werden gelöscht und durch die lokalen Daten ersetzt. Andere Daten in diesem Pod und der Pod von
+                                ${this.switchToChoose.previousWebId} bleiben unverändert.
+                            </p>
+                        </div>
                         <div class="dialog-actions">
                             <button class="dialog-btn dialog-btn-cancel" @click="${this.handleSwitchCancel}">Abbrechen</button>
-                            <button class="dialog-btn dialog-btn-ok" @click="${this.handleSwitchConfirm}">Daten löschen und anmelden</button>
                         </div>
                     </div>
                 </div>
@@ -307,22 +321,43 @@ class LandingPage extends BasePage {
      * Ask whether the local data of `previousWebId` may be deleted so `webId`
      * can be adopted. Resolves false when the user cancels or dismisses.
      */
-    private confirmIdentitySwitch(webId: string, previousWebId: string): Promise<boolean> {
-        this.switchToConfirm = {webId, previousWebId};
+    /** Ask which data to keep on a WebID switch; null when the user cancels. */
+    private chooseIdentitySwitch(webId: string, previousWebId: string): Promise<IdentitySwitchChoice | null> {
+        this.switchToChoose = {webId, previousWebId, cellars: null, bottles: null};
+        void this.countLocalData(webId);
         return new Promise((resolve) => {
             this._switchResolve = resolve;
         });
     }
 
-    private handleSwitchConfirm() {
-        this.switchToConfirm = null;
-        this._switchResolve?.(true);
+    /** Fill in the dialog's local data summary, unless it was closed meanwhile. */
+    private async countLocalData(webId: string): Promise<void> {
+        const service = this.cdi.getKellermeisterService();
+        const wellKnown = [service.getCellarWorkId(), service.getAltglassId()];
+        const cellars = (await service.getCellars()).filter((cellar) => !wellKnown.includes(cellar.getId())).length;
+        const bottles = await service.countBottles();
+        if (this.switchToChoose?.webId === webId) {
+            this.switchToChoose = {...this.switchToChoose, cellars, bottles};
+        }
+    }
+
+    private localDataSummary(): string {
+        const {cellars, bottles} = this.switchToChoose ?? {cellars: null, bottles: null};
+        if (cellars === null || bottles === null) {
+            return "…";
+        }
+        return `${cellars} Keller und ${bottles} ${bottles === 1 ? "Flasche" : "Flaschen"}`;
+    }
+
+    private handleSwitchChoice(choice: IdentitySwitchChoice) {
+        this.switchToChoose = null;
+        this._switchResolve?.(choice);
         this._switchResolve = null;
     }
 
     private handleSwitchCancel() {
-        this.switchToConfirm = null;
-        this._switchResolve?.(false);
+        this.switchToChoose = null;
+        this._switchResolve?.(null);
         this._switchResolve = null;
     }
 
@@ -341,9 +376,9 @@ class LandingPage extends BasePage {
                 this.saveWebIdToHistory(input);
                 this.showWebIdDialog = false;
                 // The chosen WebID is known here, BEFORE the OIDC redirect
-                // navigates away — the only point where the warning is genuinely
+                // navigates away — the only point where the choice is genuinely
                 // in advance. Cancelling starts no login and touches nothing.
-                if (!await this.confirmIdentitySwitchIfNeeded(input)) {
+                if (!await this.chooseIdentitySwitchIfNeeded(input)) {
                     this._webIdResolve?.(null);
                     this._webIdResolve = null;
                     return;
@@ -366,10 +401,12 @@ class LandingPage extends BasePage {
     }
 
     /**
-     * Adopt `webId` as this device's identity, wiping the previous identity's
-     * local data first if it differs. Returns whether the session may be used.
+     * Adopt `webId` as this device's identity. For a different WebID, the user's
+     * choice (made before the login flow, or asked now) decides whether the
+     * local data is deleted or kept for the new identity. Returns whether the
+     * session may be used.
      *
-     * A wipe leaves every in-memory holder stale — CDI's eagerly built
+     * Either choice leaves in-memory holders stale — CDI's eagerly built
      * repositories, the cellar bootstrap promise, the service's cached read
      * models, the container registry — so the page is reloaded rather than
      * re-initialised by hand: the startup path is the one exercised on every
@@ -379,29 +416,35 @@ class LandingPage extends BasePage {
         const appState = this.cdi.getAppStateStore();
         const check = await this.cdi.getSwitchIdentity().check(webId);
         if (check.kind === "proceed") {
-            // Drop any confirmation left over for a WebID that was never adopted
+            // Drop any choice left over for a WebID that was never adopted
             // (e.g. the provider authenticated someone else), so it cannot
-            // suppress the warning for a real switch to that WebID later.
-            if (await appState.getConfirmedIdentitySwitch()) {
-                await appState.setConfirmedIdentitySwitch(null);
+            // pre-empt the question for a real switch to that WebID later.
+            if (await appState.getIdentitySwitchChoice()) {
+                await appState.setIdentitySwitchChoice(null);
             }
             await this.cdi.getSwitchIdentity().switchTo(webId);
             return true;
         }
-        const alreadyConfirmed = await appState.getConfirmedIdentitySwitch() === webId;
-        if (!alreadyConfirmed && !await this.confirmIdentitySwitch(webId, check.previousWebId)) {
-            await appState.setConfirmedIdentitySwitch(null);
+        const remembered = await appState.getIdentitySwitchChoice();
+        const choice = remembered?.webId === webId
+            ? remembered.choice
+            : await this.chooseIdentitySwitch(webId, check.previousWebId);
+        if (!choice) {
+            await appState.setIdentitySwitchChoice(null);
             this.cdi.getSolidService().logout();
             return false;
         }
         try {
-            await this.cdi.getSwitchIdentity().switchTo(webId);
+            await this.cdi.getSwitchIdentity().switchTo(webId, choice);
+            await appState.setIdentitySwitchChoice(null);
         } catch (error) {
-            // The wipe can fail while another tab of the app holds the local
-            // database open. Adopting the session anyway would show the previous
-            // identity's data to the new one, so refuse and say why.
-            console.error("adoptIdentity: wiping the local data failed", error);
-            alert("Die lokalen Daten konnten nicht gelöscht werden. Bitte schliesse andere offene Tabs von Kellermeister und melde dich erneut an.");
+            // Deleting the local data can fail while another tab of the app
+            // holds the local database open. Adopting the session anyway would
+            // show the previous identity's data to the new one, so refuse and say why.
+            console.error("adoptIdentity: switching the identity failed", error);
+            alert(choice === "keep-pod"
+                ? "Die lokalen Daten konnten nicht gelöscht werden. Bitte schliesse andere offene Tabs von Kellermeister und melde dich erneut an."
+                : "Die lokalen Daten konnten nicht für die neue WebID übernommen werden. Bitte melde dich erneut an.");
             this.cdi.getSolidService().logout();
             return false;
         }
@@ -410,20 +453,20 @@ class LandingPage extends BasePage {
     }
 
     /**
-     * Warn about (and confirm) a WebID switch before it happens. Returns whether
-     * to go ahead. A confirmation is remembered against that WebID so the
+     * Ask which data to keep for a WebID switch before it happens. Returns
+     * whether to go ahead. The choice is remembered against that WebID so the
      * session-establishment check does not ask again after the OIDC redirect.
      */
-    private async confirmIdentitySwitchIfNeeded(webId: string): Promise<boolean> {
+    private async chooseIdentitySwitchIfNeeded(webId: string): Promise<boolean> {
         const check = await this.cdi.getSwitchIdentity().check(webId);
         if (check.kind === "proceed") {
             return true;
         }
-        const confirmed = await this.confirmIdentitySwitch(webId, check.previousWebId);
-        if (confirmed) {
-            await this.cdi.getAppStateStore().setConfirmedIdentitySwitch(webId);
+        const choice = await this.chooseIdentitySwitch(webId, check.previousWebId);
+        if (choice) {
+            await this.cdi.getAppStateStore().setIdentitySwitchChoice({webId, choice});
         }
-        return confirmed;
+        return choice !== null;
     }
 
     private cellarIconName(cellarId: string): string {
@@ -734,6 +777,32 @@ class LandingPage extends BasePage {
 
                 .dialog-btn-ok:hover:not(:disabled) {
                     opacity: 0.85;
+                }
+
+                /* Switch dialog: two destructive options of equal weight. */
+                .dialog-choice {
+                    display: flex;
+                    flex-direction: column;
+                    gap: 6px;
+                    padding: 12px;
+                    border: 1px solid var(--km-border, #E4DFD7);
+                    border-radius: 8px;
+                }
+
+                .dialog-btn-choice {
+                    background: var(--km-surface, #fff);
+                    color: var(--app-color-primary, #3A6B28);
+                    border: 1px solid var(--app-color-primary, #3A6B28);
+                }
+
+                .dialog-btn-choice:hover {
+                    opacity: 0.85;
+                }
+
+                .dialog .dialog-choice-hint {
+                    margin: 0;
+                    font-size: 13px;
+                    color: var(--km-text-muted, #8A8278);
                 }
 
                 /* Version info */

@@ -1,4 +1,4 @@
-import type {AppStateStore} from "../../application/ports/AppStateStore.ts";
+import type {AppStateStore, IdentitySwitchDecision, PendingPodReplacement} from "../../application/ports/AppStateStore.ts";
 
 /** The app-state database name; shared with the local-data wipe. */
 export const APP_STATE_DB_NAME = "kellermeister-appstate";
@@ -6,7 +6,8 @@ const STORE = "appState";
 const KEY_WEBID = "webId";
 const KEY_LAST_SYNCED_AT = "lastSyncedAt";
 const KEY_SYNC_PENDING = "syncPending";
-const KEY_CONFIRMED_SWITCH = "confirmedIdentitySwitch";
+const KEY_SWITCH_CHOICE = "confirmedIdentitySwitch";
+const KEY_PENDING_POD_REPLACEMENT = "pendingPodReplacement";
 
 /**
  * IndexedDB-backed {@link AppStateStore}. Uses a dedicated database — separate
@@ -88,8 +89,8 @@ export class IndexedDbAppStateStore implements AppStateStore {
         return isNaN(date.getTime()) ? null : date;
     }
 
-    async setLastSyncedAt(date: Date): Promise<void> {
-        await this.put(KEY_LAST_SYNCED_AT, date.toISOString());
+    async setLastSyncedAt(date: Date | null): Promise<void> {
+        await this.put(KEY_LAST_SYNCED_AT, date ? date.toISOString() : null);
     }
 
     async isSyncPending(): Promise<boolean> {
@@ -100,12 +101,33 @@ export class IndexedDbAppStateStore implements AppStateStore {
         await this.put(KEY_SYNC_PENDING, pending);
     }
 
-    async getConfirmedIdentitySwitch(): Promise<string | null> {
-        const value = await this.get(KEY_CONFIRMED_SWITCH);
-        return typeof value === "string" && value ? value : null;
+    async getIdentitySwitchChoice(): Promise<IdentitySwitchDecision | null> {
+        const value = await this.get(KEY_SWITCH_CHOICE);
+        // Older versions stored only the confirmed WebID: confirming then meant
+        // deleting the local data, i.e. keeping the Pod's data.
+        if (typeof value === "string" && value) {
+            return {webId: value, choice: "keep-pod"};
+        }
+        const decision = value as Partial<IdentitySwitchDecision> | null;
+        if (typeof decision?.webId === "string" && (decision.choice === "keep-pod" || decision.choice === "keep-local")) {
+            return {webId: decision.webId, choice: decision.choice};
+        }
+        return null;
     }
 
-    async setConfirmedIdentitySwitch(webId: string | null): Promise<void> {
-        await this.put(KEY_CONFIRMED_SWITCH, webId);
+    async setIdentitySwitchChoice(decision: IdentitySwitchDecision | null): Promise<void> {
+        await this.put(KEY_SWITCH_CHOICE, decision);
+    }
+
+    async getPendingPodReplacement(): Promise<PendingPodReplacement | null> {
+        const value = await this.get(KEY_PENDING_POD_REPLACEMENT) as Partial<PendingPodReplacement> | null;
+        if (typeof value?.webId !== "string" || !value.webId) {
+            return null;
+        }
+        return {webId: value.webId, fromBase: typeof value.fromBase === "string" ? value.fromBase : null};
+    }
+
+    async setPendingPodReplacement(pending: PendingPodReplacement | null): Promise<void> {
+        await this.put(KEY_PENDING_POD_REPLACEMENT, pending);
     }
 }

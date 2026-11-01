@@ -65,7 +65,7 @@ export async function login(page: Page, webId: string = TEST_WEBID): Promise<voi
  * whether a consent step is shown vary between CSS versions and prior "remember"
  * state.
  */
-async function completePodLogin(page: Page, email: string, password: string): Promise<void> {
+export async function completePodLogin(page: Page, email: string, password: string): Promise<void> {
   const emailField = page
     .getByLabel(/email/i)
     .or(page.locator('input[name="email"]'))

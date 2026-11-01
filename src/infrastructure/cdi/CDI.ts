@@ -81,7 +81,7 @@ export class CDI {
 
         // Sync layer
         this.syncService = new SolidSyncService(this.authService, podBase);
-        this.syncCoordinator = new SyncCoordinator(this.authService, new SynchronizeWithPod(this.authService, this.syncService, this.kellermeisterService), this.appStateStore);
+        this.syncCoordinator = new SyncCoordinator(this.authService, new SynchronizeWithPod(this.authService, this.syncService, this.appStateStore, this.kellermeisterService), this.appStateStore);
         this.reconnectSync = new ReconnectSync(this.syncCoordinator, {maxRetries: 4, baseDelayMs: 2000});
         this.pendingSync = new PendingSync(this.authService, this.appStateStore, this.reconnectSync, () => podBase() !== null);
 

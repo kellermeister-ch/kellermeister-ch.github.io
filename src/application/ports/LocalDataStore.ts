@@ -15,4 +15,14 @@ export interface LocalDataStore {
      * (notably the list of WebIDs offered for login).
      */
     wipe(): Promise<void>;
+
+    /** The Pod container base the local data was last synced with, if resolved. */
+    getPodBase(): string | null;
+
+    /**
+     * Forget the resolved Pod container base (persisted and in memory) while
+     * KEEPING the domain data — used when the local data is handed to another
+     * identity, whose session resolves its own base.
+     */
+    detachFromPod(): void;
 }

@@ -52,4 +52,51 @@ describe("IndexedDbAppStateStore", () => {
         expect(await reopened.getWebId()).toBe("https://bob.pod/profile#me");
         expect((await reopened.getLastSyncedAt())?.toISOString()).toBe("2026-01-02T03:04:05.000Z");
     });
+
+    it("clears the last sync date", async () => {
+        await store.setLastSyncedAt(new Date("2026-01-02T03:04:05.000Z"));
+        await store.setLastSyncedAt(null);
+        expect(await new IndexedDbAppStateStore().getLastSyncedAt()).toBeNull();
+    });
+
+    it("round-trips the identity switch choice", async () => {
+        expect(await store.getIdentitySwitchChoice()).toBeNull();
+
+        await store.setIdentitySwitchChoice({webId: "https://bob.pod/profile#me", choice: "keep-local"});
+        expect(await new IndexedDbAppStateStore().getIdentitySwitchChoice())
+            .toEqual({webId: "https://bob.pod/profile#me", choice: "keep-local"});
+
+        await store.setIdentitySwitchChoice(null);
+        expect(await new IndexedDbAppStateStore().getIdentitySwitchChoice()).toBeNull();
+    });
+
+    it("reads a confirmation stored by an older version as keeping the Pod's data", async () => {
+        await new Promise<void>((resolve, reject) => {
+            const request = indexedDB.open("kellermeister-appstate", 1);
+            request.onupgradeneeded = () => request.result.createObjectStore("appState");
+            request.onsuccess = () => {
+                const tx = request.result.transaction("appState", "readwrite");
+                tx.objectStore("appState").put("https://bob.pod/profile#me", "confirmedIdentitySwitch");
+                tx.oncomplete = () => { request.result.close(); resolve(); };
+                tx.onerror = () => reject(tx.error);
+            };
+            request.onerror = () => reject(request.error);
+        });
+
+        expect(await store.getIdentitySwitchChoice()).toEqual({webId: "https://bob.pod/profile#me", choice: "keep-pod"});
+    });
+
+    it("round-trips the pending Pod replacement", async () => {
+        expect(await store.getPendingPodReplacement()).toBeNull();
+
+        await store.setPendingPodReplacement({webId: "https://bob.pod/profile#me", fromBase: "https://alice.pod/kellermeister/v1/"});
+        expect(await new IndexedDbAppStateStore().getPendingPodReplacement())
+            .toEqual({webId: "https://bob.pod/profile#me", fromBase: "https://alice.pod/kellermeister/v1/"});
+
+        await store.setPendingPodReplacement({webId: "https://bob.pod/profile#me", fromBase: null});
+        expect((await store.getPendingPodReplacement())?.fromBase).toBeNull();
+
+        await store.setPendingPodReplacement(null);
+        expect(await store.getPendingPodReplacement()).toBeNull();
+    });
 });

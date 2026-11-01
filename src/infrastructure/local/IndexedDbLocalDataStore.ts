@@ -25,6 +25,14 @@ export class IndexedDbLocalDataStore implements LocalDataStore {
         this.containers.clear();
     }
 
+    getPodBase(): string | null {
+        return this.containers.get();
+    }
+
+    detachFromPod(): void {
+        this.containers.clear();
+    }
+
     /**
      * Purge the soukai-bis database. `indexedDB.deleteDatabase` blocks while
      * connections are open and the global engine holds them, so close the engine

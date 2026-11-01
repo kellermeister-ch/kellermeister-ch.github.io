@@ -1,5 +1,5 @@
 import { execFileSync } from 'node:child_process';
-import { cpSync, rmSync, mkdirSync, copyFileSync, existsSync, readFileSync, writeFileSync, renameSync, readdirSync, statSync } from 'node:fs';
+import { appendFileSync, cpSync, rmSync, mkdirSync, copyFileSync, existsSync, readFileSync, writeFileSync, renameSync, readdirSync, statSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, resolve, join, basename } from 'node:path';
 
@@ -167,4 +167,49 @@ export async function waitForPod(timeoutMs = 60_000): Promise<void> {
 export function stopPod(): void {
   docker(['rm', '-f', CONTAINER], { ignoreErrors: true });
   rmSync(podData, { recursive: true, force: true });
+}
+
+/** An account created on the e2e Pod at run time (see {@link createAccount}). */
+export interface PodAccount {
+  name: string;
+  email: string;
+  password: string;
+  webId: string;
+}
+
+/**
+ * Create a fresh account with its own Pod (`${POD_ORIGIN}/<name>/`) through the
+ * Community Solid Server's account API. The e2e Pod is a throwaway copy, so
+ * tests that need a second identity create one instead of depending on extra
+ * credentials for a seeded account.
+ */
+export async function createAccount(name: string): Promise<PodAccount> {
+  const email = `${name}@e2e.test`;
+  const password = `${name}-password`;
+  const account = await postJson(`${POD_ORIGIN}/.account/account/`, {});
+  const authorization = `CSS-Account-Token ${account.authorization}`;
+  const index = await (await fetch(`${POD_ORIGIN}/.account/`, { headers: { authorization } })).json();
+  await postJson(index.controls.password.create, { email, password }, authorization);
+  const pod = await postJson(index.controls.account.pod, { name }, authorization);
+  // CSS does not put the storage into a new profile, but the app needs it (as
+  // a real provider's profile has it) — add it to the throwaway copy on disk.
+  appendFileSync(join(podData, name, 'profile', 'card$.ttl'), `\n<${pod.webId}> <http://www.w3.org/ns/pim/space#storage> <${pod.pod}>.\n`);
+  return { name, email, password, webId: pod.webId };
+}
+
+async function postJson(url: string, body: unknown, authorization?: string): Promise<any> {
+  const response = await fetch(url, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', ...(authorization ? { authorization } : {}) },
+    body: JSON.stringify(body),
+  });
+  if (!response.ok) {
+    throw new Error(`POST ${url} failed: ${response.status} ${await response.text()}`);
+  }
+  return response.json();
+}
+
+/** On-disk directory of a Pod's Kellermeister collection in the throwaway copy. */
+export function podCollectionDir(podName: string, collection: string): string {
+  return join(podData, podName, 'private', 'kellermeister', 'v1', collection);
 }
