@@ -3,6 +3,8 @@ Kellermeister
 
 Kellermeister ist eine Web Applikation (PWA) für die Verwaltung eines oder mehrerer Weinkeller.
 
+Die Build Pipeline ist: https://github.com/kellermeister-ch/kellermeister-ch.github.io/actions/workflows/build_pipeline.yml.
+
 Design
 ---
 

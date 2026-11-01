@@ -268,6 +268,37 @@ describe('ProductFilter', () => {
             expect(filter.filterProduct(makeBottle({ name: 'CHÂTEAU BORDEAUX', trinkfensterBis: new Date(2030, 0, 1) }))).toBe(true);
         });
 
+        it('ignores diacritics in the name', () => {
+            filter.textFilter = 'bereche';
+            expect(filter.filterProduct(makeBottle({ name: 'Bérêche Brut Réserve' }))).toBe(true);
+        });
+
+        it('ignores diacritics in the entered text', () => {
+            filter.textFilter = 'Bérêche';
+            expect(filter.filterProduct(makeBottle({ name: 'Bereche Brut Reserve' }))).toBe(true);
+        });
+
+        it('ignores diacritics in region, grape variety and country', () => {
+            filter.textFilter = 'rotie';
+            expect(filter.filterProduct(makeBottle({ region: 'Côte-Rôtie' }))).toBe(true);
+            filter.textFilter = 'gruner';
+            expect(filter.filterProduct(makeBottle({ traubensorte: 'Grüner Veltliner' }))).toBe(true);
+            filter.textFilter = 'osterreich';
+            expect(filter.filterProduct(makeBottle({ land: 'Österreich' }))).toBe(true);
+        });
+
+        it('matches ligatures by their spelled-out letters', () => {
+            filter.textFilter = 'coeur';
+            expect(filter.filterProduct(makeBottle({ name: 'Cœur de Cuvée' }))).toBe(true);
+            filter.textFilter = 'strasse';
+            expect(filter.filterProduct(makeBottle({ name: 'Weinstraße' }))).toBe(true);
+        });
+
+        it('matches decomposed accents as typed on some keyboards', () => {
+            filter.textFilter = 'bere\u0301che';
+            expect(filter.filterProduct(makeBottle({ name: 'Bérêche' }))).toBe(true);
+        });
+
         it('blocks when name does not match and other fields are absent', () => {
             filter.textFilter = 'riesling';
             // bottle has a defined trinkfensterBis so the ternary fallback can be evaluated

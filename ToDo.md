@@ -39,6 +39,7 @@ ToDo
 Done
 ---
 
+- [x] E: Suche mit "bereche" findet auch "Bérêche"
 - [x] E: bei Wechsel des Pods soll gefragt werden, ob die lokalen Daten oder die Daten aus dem neuen Pod verwendet werden sollen
 - [x] E: Bewertung wird nicht in den Pod synchronisiert
 - [x] E: In Einkäufe sollen die Flaschen innerhalb eines Monats absteigend nach Datum sortiert sein, so dass die neusten Einkäufe zuerst angezeigt werden

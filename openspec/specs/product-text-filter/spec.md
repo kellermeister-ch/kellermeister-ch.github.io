@@ -1,8 +1,10 @@
 # product-text-filter Specification
 
 ## Purpose
-Defines how the free-text filter shared by the search, cellar, cellarwork and order pages matches products, including the explicit "bis <year>" drinking-window query, the "ml <size>" bottle-size query, and the "top<N>" rating query.
+Defines how the free-text filter shared by the search, cellar, cellarwork and order pages matches products, ignoring case and diacritics in plain text, including the explicit "bis <year>" drinking-window query, the "ml <size>" bottle-size query, and the "top<N>" rating query.
+
 ## Requirements
+
 ### Requirement: Drinking-window query with "bis <year>"
 The text filter SHALL treat an entered text of the form `bis <year>` as a drinking-window query. The match SHALL be case-insensitive, SHALL ignore leading and trailing whitespace, SHALL allow zero or more whitespace characters between `bis` and the year, and SHALL require the year to be exactly four digits with nothing after it. For such a query, a product SHALL match only if it has a `drinkingWindowTo` whose year is less than or equal to the entered year. Products without a `drinkingWindowTo` SHALL NOT match. The regular text fields SHALL NOT be searched for a drinking-window query.
 
@@ -31,7 +33,7 @@ The text filter SHALL treat an entered text of the form `bis <year>` as a drinki
 - **THEN** the product does not match the text filter
 
 ### Requirement: Plain text search ignores the drinking window
-For any entered text that is not a drinking-window query, a bottle-size query or a rating query, the text filter SHALL match a product only if the lower-cased text is contained in one of its name, production date, grape variety, alcohol content, country or region. The `drinkingWindowTo`, the Flaschengrösse and the ratings SHALL NOT be considered.
+For any entered text that is not a drinking-window query, a bottle-size query or a rating query, the text filter SHALL match a product only if the entered text is contained in one of its name, production date, grape variety, alcohol content, country or region, ignoring case and diacritics on both sides. The `drinkingWindowTo`, the Flaschengrösse and the ratings SHALL NOT be considered.
 
 #### Scenario: Bare year does not match by drinking window
 - **WHEN** the user enters `2025` and a product's only matching attribute would be a `drinkingWindowTo` in 2024
@@ -56,6 +58,22 @@ For any entered text that is not a drinking-window query, a bottle-size query or
 #### Scenario: Text that only resembles the rating query
 - **WHEN** the user enters `top`, `top0`, `top4`, `top 3 rot` or `topwein`
 - **THEN** the text is treated as plain text search and ratings are not considered
+
+#### Scenario: Text without accents finds an accented name
+- **WHEN** the user enters `bereche` and a product's name is `Bérêche Brut Réserve`
+- **THEN** the product matches the text filter
+
+#### Scenario: Accented text finds a name without accents
+- **WHEN** the user enters `Bérêche` and a product's name is `Bereche Brut Reserve`
+- **THEN** the product matches the text filter
+
+#### Scenario: Diacritics are ignored in every searched field
+- **WHEN** the user enters `rotie`, `gruner` or `osterreich` and a product's region is `Côte-Rôtie`, its grape variety is `Grüner Veltliner` or its country is `Österreich`
+- **THEN** the product matches the text filter
+
+#### Scenario: Ligatures match their spelled-out letters
+- **WHEN** the user enters `coeur` and a product's name is `Cœur de Cuvée`, or the user enters `strasse` and a product's name is `Weinstraße`
+- **THEN** the product matches the text filter
 
 ### Requirement: Bottle-size query with "ml <size>"
 The text filter SHALL treat an entered text of the form `ml <size>` as a bottle-size query. The match SHALL be case-insensitive, SHALL ignore leading and trailing whitespace, SHALL allow zero or more whitespace characters between `ml` and the size, and SHALL require the size to be a whole number of millilitres with nothing after it. For such a query, a product SHALL match only if its Flaschengrösse (`volumeMl`) equals the entered size. Products without a Flaschengrösse SHALL NOT match. The regular text fields SHALL NOT be searched for a bottle-size query.
@@ -106,4 +124,3 @@ The text filter SHALL treat an entered text of the form `top<N>`, with N being 1
 #### Scenario: Case and whitespace variants
 - **WHEN** the user enters `TOP3`, `top 3` or `  Top   3  `
 - **THEN** the text is treated as the rating query for 3
-

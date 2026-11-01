@@ -112,14 +112,14 @@ export class ProductFilter {
                 } else if (rating !== null) {
                     result = result && (product.getRatings() ?? []).some(r => r.getValue() === rating);
                 } else {
-                    const textFilterLowerCase = this.textFilter.toLowerCase();
+                    const text = ProductFilter.normalizeForSearch(this.textFilter);
                     result = result && (
-                        this.isIncludedIn(textFilterLowerCase, product.getName()?.toLowerCase())
-                        || this.isIncludedIn(textFilterLowerCase, product.getProductionDate()?.toUTCString().toLowerCase())
-                        || this.isIncludedIn(textFilterLowerCase, product.getGrapeVariety()?.toLowerCase())
-                        || this.isIncludedIn(textFilterLowerCase, product.getAlcoholContent())
-                        || this.isIncludedIn(textFilterLowerCase, product.getCountry()?.toLowerCase())
-                        || this.isIncludedIn(textFilterLowerCase, product.getRegion()?.toLowerCase())
+                        this.isIncludedIn(text, product.getName())
+                        || this.isIncludedIn(text, product.getProductionDate()?.toUTCString())
+                        || this.isIncludedIn(text, product.getGrapeVariety())
+                        || this.isIncludedIn(text, product.getAlcoholContent())
+                        || this.isIncludedIn(text, product.getCountry())
+                        || this.isIncludedIn(text, product.getRegion())
                     );
                 }
             }
@@ -131,8 +131,21 @@ export class ProductFilter {
         if (value === undefined) {
             return false;
         }
-        const result = value.includes(filter);
+        const result = ProductFilter.normalizeForSearch(value).includes(filter);
         return result;
+    }
+
+    // Letters that NFD does not split into a base letter and a combining mark.
+    private static readonly FOLDED_LETTERS: Record<string, string> = {
+        'œ': 'oe', 'æ': 'ae', 'ß': 'ss', 'ø': 'o', 'đ': 'd', 'ł': 'l',
+    };
+
+    // Lower-cases the text and removes diacritics, so that "Bérêche" and "bereche" compare equal.
+    private static normalizeForSearch(text: string): string {
+        return text.normalize('NFD')
+            .replace(/\p{M}/gu, '')
+            .toLowerCase()
+            .replace(/[œæßøđł]/g, (letter) => ProductFilter.FOLDED_LETTERS[letter]);
     }
 
     // Parses "bis <year>" (e.g. "bis 2025") and returns the year, or null for any other text.
