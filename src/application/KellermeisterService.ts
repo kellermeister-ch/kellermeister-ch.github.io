@@ -427,6 +427,35 @@ export class KellermeisterService implements ReadModelCache {
     }
 
     /**
+     * Permanently delete `count` bottles of one product row (lowering the count
+     * in the cellar page's bottle-count dialog, e.g. after booking one bottle
+     * too many). Unrated bottles go first, so a stored rating is kept as long
+     * as possible. Refuses — deleting nothing — if the bottles are not all of
+     * one product in one cellar or if more bottles are requested than given.
+     */
+    async removeBottlesOfProduct(bottles: Bottle[], count: number): Promise<void> {
+        if (!(count > 0)) {
+            return;
+        }
+        if (count > bottles.length) {
+            throw new Error("removeBottlesOfProduct: cannot remove more bottles than the row holds");
+        }
+        const productId = bottles[0].getProduct().getId();
+        const cellarId = bottles[0].getCellar();
+        if (bottles.some(bottle => bottle.getProduct().getId() !== productId || bottle.getCellar() !== cellarId)) {
+            throw new Error("removeBottlesOfProduct: bottles must be of one product in one cellar");
+        }
+        // Stable sort: unrated bottles first, otherwise the row's order is kept;
+        // the last ones of each kind are removed first.
+        const unrated = bottles.filter(bottle => bottle.getRating() === undefined).reverse();
+        const rated = bottles.filter(bottle => bottle.getRating() !== undefined).reverse();
+        for (const bottle of [...unrated, ...rated].slice(0, count)) {
+            await this.bottleRepository.delete(bottle);
+        }
+        this.cachedBottles = null;
+    }
+
+    /**
      * Permanently delete bottles from the Altglass cellar (swipe-to-delete on the
      * Altglass cellar page). Ratings stored on the bottles go with them; the
      * product is kept. Refuses — deleting nothing — if any bottle is elsewhere.

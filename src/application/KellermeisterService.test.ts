@@ -203,6 +203,67 @@ describe('KellermeisterService', () => {
         });
     });
 
+    describe('removeBottlesOfProduct', () => {
+        const bottle = (name: string, rating?: number, productId = 'p1', cellarId = 'keller-a') => ({
+            name,
+            getProduct: () => ({ getId: () => productId }),
+            getCellar: () => cellarId,
+            getRating: () => rating,
+        } as unknown as Bottle);
+        const deletedNames = (bottleRepo: BottleRepository) =>
+            vi.mocked(bottleRepo.delete).mock.calls.map(call => (call[0] as unknown as { name: string }).name);
+
+        it('deletes the given number of bottles, the last ones first', async () => {
+            const { service, bottleRepo } = makeService();
+
+            await service.removeBottlesOfProduct([bottle('a'), bottle('b'), bottle('c')], 2);
+
+            expect(deletedNames(bottleRepo)).toEqual(['c', 'b']);
+        });
+
+        it('deletes unrated bottles before rated ones', async () => {
+            const { service, bottleRepo } = makeService();
+
+            await service.removeBottlesOfProduct([bottle('a'), bottle('rated', 2), bottle('b')], 3);
+
+            expect(deletedNames(bottleRepo)).toEqual(['b', 'a', 'rated']);
+        });
+
+        it('does nothing for zero or a negative count', async () => {
+            const { service, bottleRepo } = makeService();
+
+            await service.removeBottlesOfProduct([bottle('a')], 0);
+            await service.removeBottlesOfProduct([bottle('a')], -1);
+
+            expect(bottleRepo.delete).not.toHaveBeenCalled();
+        });
+
+        it('throws and deletes nothing when removing more bottles than given', async () => {
+            const { service, bottleRepo } = makeService();
+
+            await expect(service.removeBottlesOfProduct([bottle('a')], 2)).rejects.toThrow(/more bottles/);
+            expect(bottleRepo.delete).not.toHaveBeenCalled();
+        });
+
+        it('throws and deletes nothing for mixed products or cellars', async () => {
+            const { service, bottleRepo } = makeService();
+
+            await expect(service.removeBottlesOfProduct([bottle('a'), bottle('b', undefined, 'p2')], 1)).rejects.toThrow(/one product/);
+            await expect(service.removeBottlesOfProduct([bottle('a'), bottle('b', undefined, 'p1', 'keller-b')], 1)).rejects.toThrow(/one product/);
+            expect(bottleRepo.delete).not.toHaveBeenCalled();
+        });
+
+        it('invalidates the bottle cache so the next read refetches', async () => {
+            const { service, bottleRepo } = makeService();
+            await service.getAllBottles();
+
+            await service.removeBottlesOfProduct([bottle('a')], 1);
+            await service.getAllBottles();
+
+            expect(bottleRepo.fetchBottles).toHaveBeenCalledTimes(2);
+        });
+    });
+
     describe('bottlesFromCellarGroupedByProduct', () => {
         // Raw cellar ids so the Altglass cellar can match the mocked getAltglassId().
         const cellarWithId = (id: string) => ({ getId: () => id } as unknown as Cellar);
