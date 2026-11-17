@@ -17,7 +17,7 @@ import {getDefaultSession} from "@inrupt/solid-client-authn-browser";
 import type {Bottle} from "../../../domain/Bottle/Bottle.ts";
 import type {Cellar} from "../../../domain/Cellar/Cellar.ts";
 import {CELLAR_UPDATED_EVENT} from "../events.ts";
-import plusIcon from "../images/icons/plus.svg?raw";
+import pencilIcon from "../images/icons/pencil.svg?raw";
 import {formatBottleCount} from "../components/bottle-count-format.ts";
 
 @customElement('cellar-page')
@@ -47,7 +47,10 @@ class CellarPage extends BasePage {
     // Number of bottles in the row whose count was clicked (the dialog's current count).
     private ratingCount: number = 0;
 
-    // Bottle-count dialog ("+" in the rating dialog): the row's bottle and the entered value.
+    // All bottles of the row whose count was clicked (removal picks from these).
+    private ratingGroup: Bottle[] = [];
+
+    // Bottle-count dialog (pencil in the rating dialog): the row's bottle and the entered value.
     @state()
     private countBottle?: Bottle = undefined;
 
@@ -169,7 +172,7 @@ class CellarPage extends BasePage {
           ${this.ratingBottle ? html`
               <div class="rating-overlay">
                   <div class="rating-container">
-                      <button class="rating-add" aria-label="Flaschen hinzufügen" title="Flaschen hinzufügen" @click="${this.handleCountOpen}">${unsafeHTML(plusIcon)}</button>
+                      <button class="rating-add" aria-label="Anzahl anpassen" title="Anzahl anpassen" @click="${this.handleCountOpen}">${unsafeHTML(pencilIcon)}</button>
                       <div class="rating-product">${this.ratingBottle.getProduct()?.getName()}</div>
                       <div class="rating-title">Bewertung</div>
                       <div class="rating-buttons">
@@ -197,15 +200,18 @@ class CellarPage extends BasePage {
                               class="count-input"
                               type="number"
                               inputmode="numeric"
-                              min="${this.ratingCount}"
+                              min="0"
                               step="1"
                               .value="${this.countValue}"
                               @input="${(e: Event) => this.countValue = (e.target as HTMLInputElement).value}"
                           />
                       </label>
+                      ${this.countRemoval() > 0 ? html`
+                          <p class="count-hint">${this.countRemoval() === 1 ? '1 Flasche wird' : `${this.countRemoval()} Flaschen werden`} gelöscht (nicht ins Altglass).</p>
+                      ` : ''}
                       <div class="rating-actions">
                           <button class="rating-action cancel" @click="${this.handleCountCancel}">Abbrechen</button>
-                          <button class="rating-action confirm" ?disabled="${!this.isCountIncrease()}" @click="${this.handleCountConfirm}">Aktualisieren</button>
+                          <button class="rating-action confirm" ?disabled="${!this.isCountChange()}" @click="${this.handleCountConfirm}">Aktualisieren</button>
                       </div>
                   </div>
               </div>
@@ -218,7 +224,7 @@ class CellarPage extends BasePage {
                               ${[...bottles.values()].map(bottleGroup => {
                                     const row = html`
                                         <bottle-component .bottle="${bottleGroup[0]}">
-                                            <button @click="${() => this.handleBottleClick(bottleGroup[0], bottleGroup.length)}" class="bottle-button" slot="count">${bottleGroup.length}</button>
+                                            <button @click="${() => this.handleBottleClick(bottleGroup)}" class="bottle-button" slot="count">${bottleGroup.length}</button>
                                         </bottle-component>`;
                                     // Swipe-to-delete exists only in the Altglass cellar.
                                     return html`
@@ -370,9 +376,10 @@ class CellarPage extends BasePage {
         this.loadBottles();
     }
 
-    private handleBottleClick(bottle: Bottle, count: number): void {
-        this.ratingBottle = bottle;
-        this.ratingCount = count;
+    private handleBottleClick(bottles: Bottle[]): void {
+        this.ratingBottle = bottles[0];
+        this.ratingGroup = bottles;
+        this.ratingCount = bottles.length;
         this.selectedRating = undefined;
     }
 
@@ -396,19 +403,30 @@ class CellarPage extends BasePage {
         this.countBottle = undefined;
     }
 
-    /** Only whole numbers above the current count are accepted — the dialog never removes bottles. */
-    private isCountIncrease(): boolean {
+    /** Any whole number from 0 that differs from the current count is accepted. */
+    private isCountChange(): boolean {
         const value = Number(this.countValue);
-        return this.countValue.trim() !== '' && Number.isInteger(value) && value > this.ratingCount;
+        return this.countValue.trim() !== '' && Number.isInteger(value) && value >= 0 && value !== this.ratingCount;
+    }
+
+    /** How many bottles the entered value would delete (0 when not lowering). */
+    private countRemoval(): number {
+        return this.isCountChange() ? Math.max(0, this.ratingCount - Number(this.countValue)) : 0;
     }
 
     private async handleCountConfirm(): Promise<void> {
-        if (this.countBottle && this.cellar && this.isCountIncrease()) {
-            await this.cdi.getKellermeisterService().addBottlesOfProduct(
-                this.countBottle.getProduct(), this.cellar.getId(), Number(this.countValue) - this.ratingCount);
+        if (this.countBottle && this.cellar && this.isCountChange()) {
+            const service = this.cdi.getKellermeisterService();
+            const difference = Number(this.countValue) - this.ratingCount;
+            if (difference > 0) {
+                await service.addBottlesOfProduct(this.countBottle.getProduct(), this.cellar.getId(), difference);
+            } else {
+                await service.removeBottlesOfProduct(this.ratingGroup, -difference);
+            }
             this.loadBottles();
         }
         this.countBottle = undefined;
+        this.ratingGroup = [];
     }
 
     private async handleRatingConfirm(): Promise<void> {
@@ -594,7 +612,7 @@ class CellarPage extends BasePage {
 
                 .rating-add svg path {
                     stroke: currentColor;
-                    stroke-width: 2.5;
+                    stroke-width: 2;
                 }
 
                 .rating-add:active {
@@ -603,6 +621,12 @@ class CellarPage extends BasePage {
 
                 .count-container .rating-product {
                     margin-bottom: 20px;
+                }
+
+                .count-hint {
+                    margin: 12px 0 0;
+                    font-size: 13px;
+                    color: #C0392B;
                 }
 
                 .count-row {

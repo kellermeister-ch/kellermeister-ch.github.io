@@ -3,7 +3,7 @@ import { test, expect } from '../fixtures/auth';
 
 /**
  * The rating dialog on the cellar page is titled with the product name and
- * offers "+" to add bottles of that product to the cellar (notes/ui/add-bottles.png).
+ * offers a pencil to adjust the number of bottles of that product in the cellar.
  */
 const PRODUCT = 'Alois Lageder Chardonnay 2020';
 
@@ -22,7 +22,7 @@ async function openHuette(page: Page): Promise<void> {
 }
 
 test.describe('Add bottles from the rating dialog', () => {
-  test('title/subtitle, "+" opens the count dialog, and "Aktualisieren" adds bottles', async ({
+  test('title/subtitle, the pencil opens the count dialog, and "Aktualisieren" adds and removes bottles', async ({
     authedPage: page,
   }) => {
     await openHuette(page);
@@ -38,17 +38,21 @@ test.describe('Add bottles from the rating dialog', () => {
     await expect(subtitle).toHaveText('Bewertung');
     expect((await title.boundingBox())!.y).toBeLessThan((await subtitle.boundingBox())!.y);
 
-    // "+" replaces the rating dialog with the count dialog, prefilled with the row count.
-    await page.getByRole('button', { name: 'Flaschen hinzufügen' }).click();
+    // The pencil replaces the rating dialog with the count dialog, prefilled with the row count.
+    await page.getByRole('button', { name: 'Anzahl anpassen' }).click();
     await expect(page.locator('.rating-button')).toHaveCount(0);
     await expect(page.locator('.count-container .rating-product')).toHaveText(PRODUCT);
     const input = page.getByLabel('Anzahl Flaschen');
     await expect(input).toHaveValue(String(before));
 
-    // Same or lower value → "Aktualisieren" disabled.
+    // Same value → "Aktualisieren" disabled; a lower value is allowed and warns.
     const update = page.getByRole('button', { name: 'Aktualisieren' });
     await expect(update).toBeDisabled();
+    await expect(page.locator('.count-hint')).toHaveCount(0);
     await input.fill(String(before - 1));
+    await expect(update).toBeEnabled();
+    await expect(page.locator('.count-hint')).toHaveText('1 Flasche wird gelöscht (nicht ins Altglass).');
+    await input.fill('-1');
     await expect(update).toBeDisabled();
 
     // "Abbrechen" closes both dialogs, back to the cellar, without adding anything.
@@ -59,7 +63,7 @@ test.describe('Add bottles from the rating dialog', () => {
 
     // Increase by 2 and accept.
     await row(page).locator('.bottle-button').click();
-    await page.getByRole('button', { name: 'Flaschen hinzufügen' }).click();
+    await page.getByRole('button', { name: 'Anzahl anpassen' }).click();
     await input.fill(String(before + 2));
     await expect(update).toBeEnabled();
     await update.click();
@@ -73,5 +77,13 @@ test.describe('Add bottles from the rating dialog', () => {
     await page.reload();
     await openHuette(page);
     await expect(row(page).locator('.bottle-button')).toHaveText(String(before + 2));
+
+    // Lower by 2 again: the added bottles are deleted, back to the original count.
+    await row(page).locator('.bottle-button').click();
+    await page.getByRole('button', { name: 'Anzahl anpassen' }).click();
+    await input.fill(String(before));
+    await update.click();
+    await expect(row(page).locator('.bottle-button')).toHaveText(String(before));
+    await expect.poll(() => subtitleCount(page)).toBe(headerBefore);
   });
 });
