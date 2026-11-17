@@ -5,6 +5,8 @@ import {BaseComponent} from "../common/base-component.ts";
 import "./product-component.ts";
 import type {Bottle} from "../../../domain/Bottle/Bottle.ts";
 import pencilIcon from "../images/icons/pencil.svg?raw";
+import {formatThumbnailDetails, type ThumbnailSettings} from "./bottle-thumbnail-format.ts";
+import {loadThumbnailSettings, THUMBNAIL_SETTINGS_CHANGED_EVENT} from "./bottle-thumbnail-settings.ts";
 
 @customElement('bottle-component')
 class BottleComponent extends BaseComponent {
@@ -21,8 +23,25 @@ class BottleComponent extends BaseComponent {
     @state()
     editing: boolean = false;
 
+    @state()
+    private thumbnailSettings: ThumbnailSettings = loadThumbnailSettings();
+
+    private readonly onThumbnailSettingsChanged = () => {
+        this.thumbnailSettings = loadThumbnailSettings();
+    };
+
     constructor() {
         super();
+    }
+
+    connectedCallback() {
+        super.connectedCallback();
+        window.addEventListener(THUMBNAIL_SETTINGS_CHANGED_EVENT, this.onThumbnailSettingsChanged);
+    }
+
+    disconnectedCallback() {
+        super.disconnectedCallback();
+        window.removeEventListener(THUMBNAIL_SETTINGS_CHANGED_EVENT, this.onThumbnailSettingsChanged);
     }
 
     static get styles() {
@@ -46,6 +65,13 @@ class BottleComponent extends BaseComponent {
                     letter-spacing: 0.01em;
                     cursor: pointer;
                     line-height: 1.35;
+                }
+
+                .product-details {
+                    display: block;
+                    font-size: 12px;
+                    color: var(--km-text-muted, #8A8278);
+                    margin-top: 2px;
                 }
 
                 .product-name:active {
@@ -89,7 +115,7 @@ class BottleComponent extends BaseComponent {
                 <div>
                     <div class="card1">
                         <slot name="count"></slot>
-                        <span class="product-name" @click="${this.expandCollapseProduct}">${this.bottle.getProduct().getName()}</span>
+                        <span class="product-name" @click="${this.expandCollapseProduct}">${this.bottle.getProduct().getName()}${this.renderDetails()}</span>
                         ${this.expanded ? html`
                             <button
                                 class="edit-button ${this.editing ? 'active' : ''}"
@@ -115,6 +141,13 @@ class BottleComponent extends BaseComponent {
                 <div>no product</div>
             `;
         }
+    }
+
+    private renderDetails() {
+        const details = formatThumbnailDetails(this.bottle!.getProduct(), this.thumbnailSettings);
+        return details.length > 0
+            ? html`<span class="product-details">${details.join(" · ")}</span>`
+            : nothing;
     }
 
     private expandCollapseProduct() {

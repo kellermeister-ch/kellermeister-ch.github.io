@@ -14,6 +14,8 @@ import {formatLastSync} from "../components/sync-status-format.ts";
 import type {SyncStatus} from "../../../application/sync/SyncCoordinator.ts";
 import type {Cellar} from "../../../domain/Cellar/Cellar.ts";
 import type {InboxUploadOutcome} from "../../../application/ports/InboxUploader.ts";
+import type {ThumbnailSettings} from "../components/bottle-thumbnail-format.ts";
+import {loadThumbnailSettings, saveThumbnailSettings} from "../components/bottle-thumbnail-settings.ts";
 
 @customElement('profile-page')
 class ProfilePage extends BasePage {
@@ -48,6 +50,9 @@ class ProfilePage extends BasePage {
 
     @state()
     private cellarWithBottles: Cellar | null = null;
+
+    @state()
+    private thumbnailSettings: ThumbnailSettings = loadThumbnailSettings();
 
     private cdi: CDI = CDI.getInstance();
     private unsubscribe: (() => void) | null = null;
@@ -188,6 +193,17 @@ class ProfilePage extends BasePage {
                       <kellermeister-button icon="plus" text="neuer Keller" @click="${this.handleNewCellarClick}" size="small" ghost></kellermeister-button>
                   </div>
               </div>
+              <div class="section-header"><p>Anzeige</p></div>
+              <div class="card">
+                  <div class="group">
+                      <label>Weinzeile</label>
+                      <div class="toggle-list">
+                          ${this.renderThumbnailToggle("region", "Region")}
+                          ${this.renderThumbnailToggle("country", "Land")}
+                          ${this.renderThumbnailToggle("drinkingWindow", "Trinkfenster")}
+                      </div>
+                  </div>
+              </div>
               <div class="section-header"><p>Solid Profil</p></div>
               <div class="card">
                   <div class="group">
@@ -250,6 +266,24 @@ class ProfilePage extends BasePage {
               <kellermeister-footer></kellermeister-footer>
           </footer>
         `;
+    }
+
+    private renderThumbnailToggle(key: keyof ThumbnailSettings, text: string) {
+        return html`
+            <label class="toggle">
+                <input
+                    type="checkbox"
+                    .checked="${this.thumbnailSettings[key]}"
+                    @change="${(e: Event) => this.handleThumbnailToggle(key, (e.target as HTMLInputElement).checked)}"
+                />
+                <span>${text}</span>
+            </label>
+        `;
+    }
+
+    private handleThumbnailToggle(key: keyof ThumbnailSettings, checked: boolean) {
+        this.thumbnailSettings = {...this.thumbnailSettings, [key]: checked};
+        saveThumbnailSettings(this.thumbnailSettings);
     }
 
     /**
@@ -458,6 +492,29 @@ class ProfilePage extends BasePage {
                     font-size: 11px;
                     word-break: break-all;
                     color: var(--km-text, #1A1917);
+                }
+
+                .toggle-list {
+                    display: flex;
+                    flex-wrap: wrap;
+                    gap: 6px 18px;
+                }
+
+                label.toggle {
+                    display: inline-flex;
+                    align-items: center;
+                    gap: 6px;
+                    font-size: 14px;
+                    font-weight: 400;
+                    letter-spacing: normal;
+                    text-transform: none;
+                    color: var(--km-text, #1A1917);
+                    cursor: pointer;
+                }
+
+                label.toggle input {
+                    accent-color: var(--app-color-primary, #3A6B28);
+                    margin: 0;
                 }
 
                 .upload-input {
